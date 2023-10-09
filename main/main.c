@@ -12,6 +12,11 @@
 #include "mqtt/mqtt.h"
 #include "wifi_custom/wifi_custom.h"
 
+TaskInitParams_t const TasksTable[] =
+{
+ // Function pointer,	String Name,	Stack size,		Parameter,	Priority,	Task Handle
+    {&mqtt_task,	"MQTT Task",	MQTT_TASK_STACK_SIZE,  NULL, MQTT_TASK_PRIORITY, &xMQTT_handler},
+};
 
 
 int nvs_init()
@@ -77,5 +82,15 @@ void app_main(void)
             return;
         }
     }
+
+    for(uint8_t idx=0; idx< sizeof(TasksTable)/sizeof(TasksTable[0]); idx++)
+    {
+        xTaskCreate(TasksTable[idx].TaskCodePtr,        /* Function pointer*/  
+                    TasksTable[idx].TaskName,           /* String Name*/          
+                    TasksTable[idx].StackDepth,         /* Stack size*/	
+                    TasksTable[idx].ParametersPtr,      /* Parameter*/
+                    TasksTable[idx].TaskPriority,       /* Priority*/
+                    TasksTable[idx].TaskHandle);        /* Task Handle*/
+	    assert(NULL != TasksTable[idx].TaskHandle);
     }
 }

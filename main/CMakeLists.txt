@@ -1,11 +1,11 @@
 idf_component_register(
     SRCS 
         "main.c"
-
+        "./mqtt/mqtt.c"
         "./wifi_custom/wifi_custom.c"
     INCLUDE_DIRS 
         "."
-
+        "./mqtt"
         "./wifi_custom"
     REQUIRES
         "driver"
