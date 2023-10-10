@@ -7,11 +7,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "sdkconfig.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
 #include "nvs_flash.h"
 
 #include "task_common.h"
+
+#include "data_handler.h"
 #include "mqtt/mqtt.h"
 #include "wifi_custom/wifi_custom.h"
 #include "ble_gatt_client/ble_gattc.h"
@@ -34,13 +36,14 @@
 /******************************************************************************
 * Module Variable Definitions
 *******************************************************************************/
+
 TaskInitParams_t const TasksTable[] =
 {
- // Function pointer,	String Name,	Stack size,		Parameter,	Priority,	Task Handle
+ // Function pointer,	String Name,	            Stack size,		        Parameter,	Priority,	Task Handle
 #if (APP_CONF_ENABLE_MQTT != 0)
-    {&mqtt_task,	"MQTT Task",	MQTT_TASK_STACK_SIZE,  NULL, MQTT_TASK_PRIORITY, &xMQTT_handler},
+    {&mqtt_task,	        "MQTT Task",	        MQTT_TASK_STACK_SIZE,   NULL,       MQTT_TASK_PRIORITY, &xMQTT_handler},
 #endif /* End of (APP_CONF_ENABLE_BLE_GATTC != 0) */
-
+    {&data_handling_task,	"Data Handling Task",	DATA_HANDLING_TASK_STACK_SIZE,  NULL, DATA_HANDLING_TASK_PRIORITY, &xdata_handler},
 };
 
 /******************************************************************************
@@ -72,35 +75,17 @@ int nvs_init()
 void app_ble_data_handling(void* p_data, void* data_len)
 {
     ble_client_packet_t* p_ble_packet = (ble_client_packet_t*)p_data;
-    if(p_ble_packet == NULL)
+    if(p_ble_packet == NULL || p_ble_packet->p_payload == NULL)
     {
         ESP_LOGE(MODULE_NAME, "Invalid BLE packet");
         return;
     }
-    
-    if(p_ble_packet->p_payload == NULL)
-    {
-        ESP_LOGE(MODULE_NAME, "Invalid BLE packet payload");
-        return;
-    }
-
-    if(p_ble_packet->payload_len <= 0)
-    {
-        ESP_LOGE(MODULE_NAME, "Invalid BLE packet payload length");
-        return;
-    }
-
-    if(p_ble_packet->p_payload[0] != SENSOR_PAYLOAD_DATA_HEADER)
-        return;
-
-    ESP_LOGI(MODULE_NAME, "BLE packet received. Payload length: %d", p_ble_packet->payload_len);
-    for(uint16_t idx=0; idx<p_ble_packet->payload_len; idx++)
-    {
-        printf("%02X ", p_ble_packet->p_payload[idx]);
-    }
-    printf("\r\n");
-    //TODO: Forward data to data handing task
-
+    uint16_t raw_sensor_data_len = sizeof(p_ble_packet->ble_addr) + p_ble_packet->payload_len;
+    uint8_t raw_sensor_data[raw_sensor_data_len];
+    memset(raw_sensor_data, 0, raw_sensor_data_len);
+    memcpy(raw_sensor_data, p_ble_packet->ble_addr, sizeof(p_ble_packet->ble_addr));
+    memcpy(raw_sensor_data + sizeof(p_ble_packet->ble_addr), p_ble_packet->p_payload, p_ble_packet->payload_len);
+    sensor_data_sending(raw_sensor_data, raw_sensor_data_len);
 }
 
 int app_ble_client_init()

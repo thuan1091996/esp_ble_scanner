@@ -30,20 +30,14 @@
 #define FAILURE                                 (-1)
 
 #define MQTT_TESTING                            (1)
-#define HTTP_TESTING					        (1)
-#define TCP_CLIENT_TESTING				        (0)
-#define GOLIOTH_TESTING                         (0)
 /******************************************************************************
 * Configuration Constants
 *******************************************************************************/
-#define HTTP_TASK_STACK_SIZE			        (10*1024)
-#define HTTP_TASK_PRIORITY				        (tskIDLE_PRIORITY + 1)
-
 #define MQTT_TASK_STACK_SIZE                    (10*1024)
 #define MQTT_TASK_PRIORITY	                    (tskIDLE_PRIORITY + 1)
 
-#define TCP_CLIENT_SOCKET_TASK_STACK_SIZE		(5*1024)
-#define TCP_CLIENT_SOCKET_TASK_PRIORITY			(tskIDLE_PRIORITY + 1)
+#define DATA_HANDLING_TASK_STACK_SIZE           (5*1024)
+#define DATA_HANDLING_TASK_PRIORITY	            (tskIDLE_PRIORITY + 1)
 /******************************************************************************
 * Macros
 *******************************************************************************/
@@ -71,8 +65,9 @@ typedef struct
 /******************************************************************************
 * Variables
 *******************************************************************************/
-extern TaskHandle_t xHTTP_handler;
 extern TaskHandle_t xMQTT_handler;
+extern TaskHandle_t xdata_handler;
+
 extern TaskInitParams_t const TasksTable[];
 
 /******************************************************************************

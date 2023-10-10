@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS 
         "main.c"
+        "data_handler.c"
         "./mqtt/mqtt.c"
         "./wifi_custom/wifi_custom.c"
         "./ble_gatt_client/ble_gattc.c"
