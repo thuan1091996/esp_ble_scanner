@@ -62,7 +62,6 @@
 extern "C"{
 #endif
 int ble_gatt_client_init();
-void Function(void);
 
 #ifdef __cplusplus
 } // extern "C"

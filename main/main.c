@@ -1,23 +1,55 @@
+/******************************************************************************
+* Includes
+*******************************************************************************/
 #include <stdio.h>
 
-#include "sdkconfig.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "sdkconfig.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 
 #include "task_common.h"
 #include "mqtt/mqtt.h"
 #include "wifi_custom/wifi_custom.h"
+#include "ble_gatt_client/ble_gattc.h"
+/******************************************************************************
+* Module Preprocessor Constants
+*******************************************************************************/
+#define MODULE_NAME                                 "main"
 
+#define APP_CONF_ENABLE_BLE_GATTC                   (1)
+#define APP_CONF_ENABLE_WIFI                        (0)
+#define APP_CONF_ENABLE_MQTT                        (0)
+/******************************************************************************
+* Module Preprocessor Macros
+*******************************************************************************/
+
+/******************************************************************************
+* Module Typedefs
+*******************************************************************************/
+
+/******************************************************************************
+* Module Variable Definitions
+*******************************************************************************/
 TaskInitParams_t const TasksTable[] =
 {
  // Function pointer,	String Name,	Stack size,		Parameter,	Priority,	Task Handle
+#if (APP_CONF_ENABLE_MQTT != 0)
     {&mqtt_task,	"MQTT Task",	MQTT_TASK_STACK_SIZE,  NULL, MQTT_TASK_PRIORITY, &xMQTT_handler},
+#endif /* End of (APP_CONF_ENABLE_BLE_GATTC != 0) */
+
 };
 
+/******************************************************************************
+* Function Prototypes
+*******************************************************************************/
+
+/******************************************************************************
+* Function Definitions
+*******************************************************************************/
 
 int nvs_init()
 {
@@ -41,9 +73,11 @@ int nvs_init()
 void app_main(void)
 {
     nvs_init();
+
+    #if (APP_CONF_ENABLE_WIFI != 0)
     if ( 0 != wifi_custom_init())
     {
-        ESP_LOGE("custom_wifi", "Failed to initialize Wi-Fi");
+        ESP_LOGE(MODULE_NAME, "Failed to initialize Wi-Fi");
         return;
     }
 
@@ -52,37 +86,47 @@ void app_main(void)
     {
         if ( 0 == wifi_custom__power_on())
         {
-            ESP_LOGI("custom_wifi", "Connected to Wi-Fi");
+            ESP_LOGI(MODULE_NAME, "Connected to Wi-Fi");
             break;
         }
         else
         {
-            ESP_LOGE("custom_wifi", "Failed to connect to Wi-Fi. Retrying [%d/%d]...", retry_count+1, 2);
+            ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi. Retrying [%d/%d]...", retry_count+1, 2);
         }
     }
 
     if(wifi_custom__connected() != true)
     {
-        ESP_LOGE("custom_wifi", "Failed to connect to Wi-Fi. Running ESP SmartConfig...");
+        ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi. Running ESP SmartConfig...");
         wifi_custom__power_off();
         if ( 0 != smartconfig_init())
         {
-            ESP_LOGE("custom_wifi", "Failed to run ESP SmartConfig. Aborting...");
+            ESP_LOGE(MODULE_NAME, "Failed to run ESP SmartConfig. Aborting...");
             return;
         }
-        ESP_LOGI("custom_wifi", "Waiting for Wi-Fi config with ESPTouch...");
+        ESP_LOGI(MODULE_NAME, "Waiting for Wi-Fi config with ESPTouch...");
         vTaskDelay(10000 / portTICK_PERIOD_MS);
         if ( 0 == wifi_custom__power_on())
         {
-            ESP_LOGI("custom_wifi", "Connected to Wi-Fi");
+            ESP_LOGI(MODULE_NAME, "Connected to Wi-Fi");
         }
         else
         {
-            ESP_LOGE("custom_wifi", "Failed to connect to Wi-Fi. Aborting...");
+            ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi. Aborting...");
             return;
         }
     }
+    #endif /* End of (APP_CONF_ENABLE_WIFI != 0) */
 
+    #if (APP_CONF_ENABLE_BLE_GATTC != 0)
+    if ( 0 != ble_gatt_client_init())
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to initialize BLE GATTC");
+        return;
+    }
+    #endif /* End of (APP_CONF_ENABLE_BLE_GATTC != 0) */
+    
+    // Check array size
     for(uint8_t idx=0; idx< sizeof(TasksTable)/sizeof(TasksTable[0]); idx++)
     {
         xTaskCreate(TasksTable[idx].TaskCodePtr,        /* Function pointer*/  
@@ -91,6 +135,6 @@ void app_main(void)
                     TasksTable[idx].ParametersPtr,      /* Parameter*/
                     TasksTable[idx].TaskPriority,       /* Priority*/
                     TasksTable[idx].TaskHandle);        /* Task Handle*/
-	    assert(NULL != TasksTable[idx].TaskHandle);
+        assert(NULL != TasksTable[idx].TaskHandle);
     }
 }
