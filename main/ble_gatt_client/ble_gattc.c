@@ -41,8 +41,6 @@
 /******************************************************************************
  * Module Preprocessor Constants
  *******************************************************************************/
-#define XIAO_PAYLOAD_HEADER_VALUE               (0xAA)
-
 #define MODULE_NAME                             "BLE_GATTC"
 #define MODULE_DEFAULT_LOG_LEVEL                ESP_LOG_WARN        
 #define PROFILE_NUM                             1
@@ -322,16 +320,25 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                     uint8_t* p_adv_payload = esp_ble_resolve_adv_data(scan_result->scan_rst.ble_adv, ESP_BLE_AD_MANUFACTURER_SPECIFIC_TYPE, &adv_payload_len);
                     if(p_adv_payload != NULL) 
                     {
-                        if(p_adv_payload[0] != XIAO_PAYLOAD_HEADER_VALUE)
-                            break;
+                        // if(p_adv_payload[0] != XIAO_PAYLOAD_HEADER_VALUE)
+                        //     break;
                         if(ble_client_callback.ble_found_adv_packet_cb != NULL)
                         {
-                            ble_client_callback.ble_found_adv_packet_cb(p_adv_payload, adv_payload_len);
+                            ble_client_packet_t ble_client_packet;
+                            memcpy(ble_client_packet.ble_addr, scan_result->scan_rst.bda, BLE_ADDR_LEN);
+                            ble_client_packet.addr_type = scan_result->scan_rst.ble_addr_type;
+                            ble_client_packet.rssi = scan_result->scan_rst.rssi;
+                            ble_client_packet.p_payload = p_adv_payload;
+                            ble_client_packet.payload_len = adv_payload_len;
+                            ble_client_callback.ble_found_adv_packet_cb(&ble_client_packet, NULL);
                         }
+                        #if 0
                         ESP_LOGW(MODULE_NAME, "======= New device is found =======");
                         esp_log_buffer_hex(MODULE_NAME, scan_result->scan_rst.bda, 6);
                         esp_log_buffer_hex(MODULE_NAME, p_adv_payload, adv_payload_len);
                         ESP_LOGW(MODULE_NAME, "=================================== \r\n");
+                        #endif
+
                     }
 
                     //5. Find the interested device to connect if required (based on adv name for example)
@@ -492,6 +499,11 @@ int ble_gatt_client_init(ble_client_callback_t* ble_app_cb)
     {
         ESP_LOGE(MODULE_NAME, "set local  MTU failed, error code = %x", local_mtu_ret);
         return -1;
+    }
+
+    if(ble_app_cb != NULL)
+    {
+        ble_client_callback = *ble_app_cb;
     }
     ESP_LOGI(MODULE_NAME, "BLE GATTC initialized");
     esp_log_level_set(MODULE_NAME, MODULE_DEFAULT_LOG_LEVEL);

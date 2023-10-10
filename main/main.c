@@ -69,11 +69,45 @@ int nvs_init()
     return SUCCESS;
 }
 
+void app_ble_data_handling(void* p_data, void* data_len)
+{
+    ble_client_packet_t* p_ble_packet = (ble_client_packet_t*)p_data;
+    if(p_ble_packet == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Invalid BLE packet");
+        return;
+    }
+    
+    if(p_ble_packet->p_payload == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Invalid BLE packet payload");
+        return;
+    }
+
+    if(p_ble_packet->payload_len <= 0)
+    {
+        ESP_LOGE(MODULE_NAME, "Invalid BLE packet payload length");
+        return;
+    }
+
+    if(p_ble_packet->p_payload[0] != SENSOR_PAYLOAD_DATA_HEADER)
+        return;
+
+    ESP_LOGI(MODULE_NAME, "BLE packet received. Payload length: %d", p_ble_packet->payload_len);
+    for(uint16_t idx=0; idx<p_ble_packet->payload_len; idx++)
+    {
+        printf("%02X ", p_ble_packet->p_payload[idx]);
+    }
+    printf("\r\n");
+    //TODO: Forward data to data handing task
+
+}
+
 int app_ble_client_init()
 {
     ble_client_callback_t ble_client_callback = 
     {
-        .ble_found_adv_packet_cb = NULL,
+        .ble_found_adv_packet_cb = &app_ble_data_handling,
     };
     if( ble_gatt_client_init(&ble_client_callback) != SUCCESS)
     {

@@ -43,6 +43,7 @@
 #define BLE_GATTC_SCAN_INTERVAL                 ((uint16_t)0x0010) // N * 0.625 msec ~ 10ms
 #define BLE_GATTC_SCAN_WINDOW                   ((uint16_t)0x0010) // N * 0.625 msec ~ 10ms
 #define BLE_MTU_CONFIG_SIZE                     (200)
+#define BLE_ADDR_LEN                            (6)
 
 #define BLE_CONF_AUTO_RESCAN                    (1) // 1-> automatically rescan after scan duration timeout or disconnect
 
@@ -66,8 +67,17 @@ typedef struct
 typedef struct
 {
     //When found an advertising packet with appropriate filters, this callback will be called
-    void (*ble_found_adv_packet_cb)(uint8_t* p_data, uint16_t data_len); 
+    void (*ble_found_adv_packet_cb)(void* p_data, void* p_data_len); 
 }ble_client_callback_t;
+
+typedef struct
+{
+    uint8_t ble_addr[BLE_ADDR_LEN];
+    uint8_t addr_type;
+    int rssi;
+    uint8_t* p_payload;
+    uint16_t payload_len;
+}ble_client_packet_t;
 /******************************************************************************
 * Variables
 *******************************************************************************/
