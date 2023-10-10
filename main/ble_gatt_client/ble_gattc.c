@@ -35,6 +35,7 @@
 #include "esp_bt_main.h"
 #include "esp_gatt_common_api.h"
 
+#include "ble_gattc.h"
 #include "task_common.h"
 
 /******************************************************************************
@@ -43,15 +44,9 @@
 #define XIAO_PAYLOAD_HEADER_VALUE               (0xAA)
 
 #define MODULE_NAME                             "BLE_GATTC"
+#define MODULE_DEFAULT_LOG_LEVEL                ESP_LOG_WARN        
 #define PROFILE_NUM                             1
 #define PROFILE_A_APP_ID                        0
-
-// BLE configs
-#define BLE_GATTC_SCAN_DURATION                 ((uint32_t)0xFFFFFFFF)
-#define BLE_GATTC_SCAN_INTERVAL                 ((uint16_t)0x0010) // N * 0.625 msec ~ 10ms
-#define BLE_GATTC_SCAN_WINDOW                   ((uint16_t)0x0010) // N * 0.625 msec ~ 10ms
-
-#define BLE_MTU_CONFIG_SIZE                     (200)
 
 /******************************************************************************
  * Module Preprocessor Macros
@@ -91,6 +86,8 @@ static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM] = {
         .gattc_if = ESP_GATT_IF_NONE,
     },
 };
+
+ble_client_callback_t ble_client_callback = {0};
 
 /******************************************************************************
  * Function Definitions
@@ -280,8 +277,10 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
             break;
         case ESP_GATTC_DISCONNECT_EVT:
             ESP_LOGI(MODULE_NAME, "ESP_GATTC_DISCONNECT_EVT, reason = %d", p_data->disconnect.reason);
-            esp_ble_gap_start_scanning(BLE_GATTC_SCAN_DURATION);
-
+            if(BLE_CONF_AUTO_RESCAN != 0)
+            {
+                ble_gatt_client_start_scan(BLE_GATTC_SCAN_DURATION);
+            }
             break;
         default:
             break;
@@ -296,7 +295,6 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
     switch (event)
     {
         case ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT:
-            esp_ble_gap_start_scanning(BLE_GATTC_SCAN_DURATION);
             ESP_LOGI(MODULE_NAME, "2. Finish set scan parameters, start scan");
             break;
 
@@ -326,6 +324,10 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                     {
                         if(p_adv_payload[0] != XIAO_PAYLOAD_HEADER_VALUE)
                             break;
+                        if(ble_client_callback.ble_found_adv_packet_cb != NULL)
+                        {
+                            ble_client_callback.ble_found_adv_packet_cb(p_adv_payload, adv_payload_len);
+                        }
                         ESP_LOGW(MODULE_NAME, "======= New device is found =======");
                         esp_log_buffer_hex(MODULE_NAME, scan_result->scan_rst.bda, 6);
                         esp_log_buffer_hex(MODULE_NAME, p_adv_payload, adv_payload_len);
@@ -339,8 +341,11 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 
 
                 case ESP_GAP_SEARCH_INQ_CMPL_EVT:
-                    ESP_LOGI(MODULE_NAME, "4.1. Scan complete, restart scanning");
-                    esp_ble_gap_start_scanning(BLE_GATTC_SCAN_DURATION);
+                    if(BLE_CONF_AUTO_RESCAN != 0)
+                    {
+                        ESP_LOGI(MODULE_NAME, "4.1. Scan complete, restart scanning");
+                        ble_gatt_client_start_scan(BLE_GATTC_SCAN_DURATION);
+                    }
                     break;
 
                 default:
@@ -425,7 +430,7 @@ void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_ga
     } while (0);
 }
 
-int ble_gatt_client_init()
+int ble_gatt_client_init(ble_client_callback_t* ble_app_cb)
 {
     int ret;
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
@@ -489,5 +494,29 @@ int ble_gatt_client_init()
         return -1;
     }
     ESP_LOGI(MODULE_NAME, "BLE GATTC initialized");
+    esp_log_level_set(MODULE_NAME, MODULE_DEFAULT_LOG_LEVEL);
+
     return 0;
+}
+
+int ble_gatt_client_start_scan(uint32_t scan_duration_s)
+{
+    int status;
+    status = esp_ble_gap_start_scanning(scan_duration_s);
+    if(status != 0)
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to start scan with err %d", status);
+    }
+    return status;
+}
+
+int ble_gatt_client_stop_scan()
+{
+    int status;
+    status = esp_ble_gap_stop_scanning();
+    if(status != 0)
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to stop scan with err %d", status);
+    }
+    return status;
 }

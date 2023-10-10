@@ -50,7 +50,6 @@ TaskInitParams_t const TasksTable[] =
 /******************************************************************************
 * Function Definitions
 *******************************************************************************/
-
 int nvs_init()
 {
     //Initialize NVS
@@ -67,6 +66,27 @@ int nvs_init()
         }
     }
     ESP_LOGI("nvs", "NVS Flash initialized \r\n");   
+    return SUCCESS;
+}
+
+int app_ble_client_init()
+{
+    ble_client_callback_t ble_client_callback = 
+    {
+        .ble_found_adv_packet_cb = NULL,
+    };
+    if( ble_gatt_client_init(&ble_client_callback) != SUCCESS)
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to initialize BLE GATTC");
+        return FAILURE;
+    }
+    
+    if (ble_gatt_client_start_scan(BLE_GATTC_SCAN_DURATION) != SUCCESS)
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to start BLE GATTC scan");
+        return FAILURE;
+    }
+
     return SUCCESS;
 }
 
@@ -119,7 +139,7 @@ void app_main(void)
     #endif /* End of (APP_CONF_ENABLE_WIFI != 0) */
 
     #if (APP_CONF_ENABLE_BLE_GATTC != 0)
-    if ( 0 != ble_gatt_client_init())
+    if ( 0 != app_ble_client_init())
     {
         ESP_LOGE(MODULE_NAME, "Failed to initialize BLE GATTC");
         return;
