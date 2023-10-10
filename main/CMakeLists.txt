@@ -3,13 +3,16 @@ idf_component_register(
         "main.c"
         "./mqtt/mqtt.c"
         "./wifi_custom/wifi_custom.c"
+        "./ble_gatt_client/ble_gattc.c"
     INCLUDE_DIRS 
         "."
         "./mqtt"
         "./wifi_custom"
+        "./ble_gatt_client"
     REQUIRES
         "driver"
         "nvs_flash"
         "mqtt"
         "esp_wifi"
+        "bt"
 )
