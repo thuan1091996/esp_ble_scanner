@@ -46,21 +46,20 @@
 * Module Preprocessor Constants
 *******************************************************************************/
 #define WIFI_HTTPS_DEFAULT_TIMEOUT_MS   (10000)
-#define WIFI_RETRY_CONN_MAX             (5)
+#define WIFI_CONN_TIMEOUT_MS            (5000) /* In ms */
 #define WIFI_SSID_MAX_LEN               (32)
 #define WIFI_PASS_MAX_LEN               (64)
 #define WIFI_CERT_MAX_LEN               (2048)
-#define WIFI_CONFIG_LOAD_CERT_TO_RAM    (1) /* Set to 1 will load cert to "wifi_cert" when write cert*/
-#define WIFI_CONFIG_LOAD_CREDENTIAL_NVS (0) /* Set to 1 to load Wi-Fi credential from NVS */
 
 
-#define WIFI_CONNECTED_BIT 			BIT0
-#define WIFI_FAIL_BIT      			BIT1
-#define ESPTOUCH_GOT_CREDENTIAL     BIT2
+#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_WARN 
+#define WIFI_CONNECTED_BIT 			    BIT0
 
+#define ESPTOUCH_GOT_CREDENTIAL         BIT1
+#define ESPTOUCH_TIMEOUT_MS             (60000) /* In ms */
 
-#define EXAMPLE_ESP_WIFI_SSID      "thuantm5"
-#define EXAMPLE_ESP_WIFI_PASS      "12345678"
+#define EXAMPLE_ESP_WIFI_SSID           "thuantm5"
+#define EXAMPLE_ESP_WIFI_PASS           "12345678"
 
 /******************************************************************************
 * Module Preprocessor Macros
@@ -77,7 +76,10 @@ static uint8_t ssid[WIFI_SSID_MAX_LEN] = { 0 };
 static uint8_t password[WIFI_PASS_MAX_LEN] = { 0 };
 static char wifi_cert[WIFI_CERT_MAX_LEN] = {0};  
 /* FreeRTOS event group to signal when we are connected*/
-static EventGroupHandle_t s_wifi_event_group;
+static EventGroupHandle_t s_wifi_event_group = NULL;
+static EventGroupHandle_t smartconf_event_group = NULL;
+
+wifi_sta_callback_t wifi_station_cb = {0};
 /******************************************************************************
 * Function Prototypes
 *******************************************************************************/
@@ -100,22 +102,135 @@ void sntp_time_init()
     sntp_init();
 }
 
+void smartconfig_event_handler(void* event_handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
+{
+	ESP_LOGI("esptouch", "Event handler invoked \r\n");
+    if (event_base == SC_EVENT)
+    {
+        if (event_id == SC_EVENT_SCAN_DONE) 
+        {
+            ESP_LOGI("esptouch", "Scan done");
+        }
+        else if (event_id == SC_EVENT_FOUND_CHANNEL) 
+        {
+            ESP_LOGI("esptouch", "Found channel");
+        }
+        else if (event_id == SC_EVENT_GOT_SSID_PSWD) 
+        {
+            ESP_LOGI("esptouch", "Got SSID and password with Smartconfig");
+
+            smartconfig_event_got_ssid_pswd_t *evt = (smartconfig_event_got_ssid_pswd_t *)event_data;
+            wifi_config_t wifi_config;
+            uint8_t rvd_data[33] = { 0 };
+
+            bzero(&wifi_config, sizeof(wifi_config_t));
+            memcpy(wifi_config.sta.ssid, evt->ssid, sizeof(wifi_config.sta.ssid));
+            memcpy(wifi_config.sta.password, evt->password, sizeof(wifi_config.sta.password));
+            wifi_config.sta.bssid_set = evt->bssid_set;
+            if (wifi_config.sta.bssid_set == true) {
+                memcpy(wifi_config.sta.bssid, evt->bssid, sizeof(wifi_config.sta.bssid));
+            }
+
+            memcpy(ssid, evt->ssid, sizeof(evt->ssid));
+            memcpy(password, evt->password, sizeof(evt->password));
+            ESP_LOGI("esptouch", "SSID:%s", ssid);
+            ESP_LOGI("esptouch", "PASSWORD:%s", password);
+            if (evt->type == SC_TYPE_ESPTOUCH_V2) {
+                ESP_ERROR_CHECK( esp_smartconfig_get_rvd_data(rvd_data, sizeof(rvd_data)) );
+                ESP_LOGI("esptouch", "RVD_DATA:");
+                for (int i=0; i<33; i++) {
+                    printf("%02x ", rvd_data[i]);
+                }
+                printf("\n");
+            }
+
+            // Store SSID and password in NVS
+            ESP_LOGI("esptouch", "Storing SSID: %s, password: %s in NVS", wifi_config.sta.ssid, wifi_config.sta.password);
+            ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
+            xEventGroupSetBits(smartconf_event_group, ESPTOUCH_GOT_CREDENTIAL);
+        }
+        else if (event_id == SC_EVENT_SEND_ACK_DONE) 
+        {
+            ESP_LOGI("esptouch", "Smartconfig finished send ACK");
+        }
+        else
+        {
+            ESP_LOGW("esptouch", "Unknown SC_EVENT %ld", event_id);
+        }
+    }
+    else
+    {
+        ESP_LOGW("esptouch", "Unknown event base %s, event id %ld", event_base, event_id);
+    }
+}
+
+/*
+ * @brief: Init smartconfig
+ * 
+ * @return int: 0 if success, -1 if error 
+ */
 int smartconfig_init()
 {
     esp_err_t err = esp_smartconfig_set_type(SC_TYPE_ESPTOUCH);
     if (err != ESP_OK)
     {
-        ESP_LOGE("wifi_custom", "Smartconfig type set failed with err %d", err);
+        ESP_LOGE("esptouch", "Smartconfig type set failed with err %d", err);
         return -1;
     }
+
+    if(ESP_OK != esp_event_handler_register(SC_EVENT, ESP_EVENT_ANY_ID, smartconfig_event_handler, NULL) )
+    {
+        ESP_LOGE("esptouch", "Failed to register Smartconfig event handler");
+        return -1;
+    }
+
+    smartconf_event_group = xEventGroupCreate();
+    if(smartconf_event_group == NULL)
+    {
+        ESP_LOGE("esptouch", "Failed to create Smartconfig event group");
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * @brief: Start smartconfig
+ * 
+ * @return int: 0 if able to obtain credential, -1 if failed after timeout
+ */
+int smartconfig_start()
+{
+    int err;
     smartconfig_start_config_t cfg = SMARTCONFIG_START_CONFIG_DEFAULT();
     err = esp_smartconfig_start(&cfg);
     if (err != ESP_OK)
     {
-        ESP_LOGE("wifi_custom", "Smartconfig start failed with err %d", err);
+        ESP_LOGE("esptouch", "Smartconfig start failed with err %d", err);
         return -1;
     }
-    return 0;
+
+
+    /* Waiting for smartconfig to finish */
+    EventBits_t bits = xEventGroupWaitBits(smartconf_event_group, ESPTOUCH_GOT_CREDENTIAL,
+                                           pdFALSE,
+                                           pdFALSE,
+                                           pdMS_TO_TICKS(ESPTOUCH_TIMEOUT_MS));
+    if (bits & ESPTOUCH_GOT_CREDENTIAL)
+    {
+        ESP_LOGI("esptouch", "Obtained SSID:%s password:%s", ssid, password);
+        esp_smartconfig_stop();
+        return 0;
+    }
+    else
+    {
+        ESP_LOGE("esptouch", "Smartconfig timeout");
+        return -1;
+    }
+}
+
+int smartconfig_stop()
+{
+    return esp_smartconfig_stop();
 }
 
 void wifi_on_connected_cb(void)
@@ -125,129 +240,78 @@ void wifi_on_connected_cb(void)
 
 void wifi_event_handler(void* event_handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
-	static int s_retry_num = 0;
 	ESP_LOGI("wifi_custom", "Event handler invoked \r\n");
-	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
+    /* Handle IP_EVENT */
+    if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
 	{
-        ESP_LOGI("wifi_custom", "WIFI_EVENT_STA_START");
-		ESP_LOGI("wifi_custom", "Wi-Fi STATION started successfully \r\n");
-	}
-	else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED)
-	{
-        ESP_LOGI("wifi_custom", "WIFI_EVENT_STA_DISCONNECTED");
-        wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
-        ESP_LOGW("wifi_custom", "Wi-Fi disconnected, reason: %d", event->reason);        
-        switch (event->reason)
-        {
-
-            case WIFI_REASON_ASSOC_LEAVE:
-            {
-                ESP_LOGE("wifi_custom", "STA left");
-                xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-                break;
-            }
-
-            case WIFI_REASON_AUTH_FAIL:
-            {
-                ESP_LOGE("wifi_custom", "Authentication failed. Wrong credentials provided.");
-                ESP_LOGW("wifi_custom", "Start smartconfig to update credentials");
-                xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-                break;
-            }
-            case WIFI_REASON_NO_AP_FOUND:
-            {
-                ESP_LOGE("wifi_custom", "STA AP Not found");
-            }
-            // case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
-            // case WIFI_REASON_AUTH_EXPIRE:
-
-            default:
-            {
-                if (s_retry_num < 3)
-                {
-                    esp_wifi_connect();
-                    s_retry_num++;
-                    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-                    ESP_LOGI("wifi_custom", "retry to connect to the AP");
-                }
-                else if(s_retry_num < WIFI_RETRY_CONN_MAX)
-                {
-                    ESP_LOGW("wifi_custom", "Start smartconfig to update credentials");
-                    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-                    s_retry_num++;
-                }
-                else
-                {
-                    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-                }
-            }
-            break;
-        }
-	}
-
-	else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
-	{
-        ESP_LOGI("wifi_custom", "IP_EVENT_STA_GOT_IP");
 		ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
 		ESP_LOGI("wifi_custom", "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-		s_retry_num = 0;
 		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 	}
-    else if (event_base == SC_EVENT && event_id == SC_EVENT_SCAN_DONE) 
+    /* Handle Wi-Fi event */
+    else if(event_base == WIFI_EVENT)
     {
-        ESP_LOGI("wifi_custom", "Scan done");
-    }
-    else if (event_base == SC_EVENT && event_id == SC_EVENT_FOUND_CHANNEL) 
-    {
-        ESP_LOGI("wifi_custom", "Found channel");
-    } 
-    else if (event_base == SC_EVENT && event_id == SC_EVENT_GOT_SSID_PSWD) 
-    {
-        ESP_LOGI("wifi_custom", "Got SSID and password");
-
-        smartconfig_event_got_ssid_pswd_t *evt = (smartconfig_event_got_ssid_pswd_t *)event_data;
-        wifi_config_t wifi_config;
-        uint8_t rvd_data[33] = { 0 };
-
-        bzero(&wifi_config, sizeof(wifi_config_t));
-        memcpy(wifi_config.sta.ssid, evt->ssid, sizeof(wifi_config.sta.ssid));
-        memcpy(wifi_config.sta.password, evt->password, sizeof(wifi_config.sta.password));
-        wifi_config.sta.bssid_set = evt->bssid_set;
-        if (wifi_config.sta.bssid_set == true) {
-            memcpy(wifi_config.sta.bssid, evt->bssid, sizeof(wifi_config.sta.bssid));
+        if (event_id == WIFI_EVENT_STA_START)
+        {
+            ESP_LOGI("wifi_custom", "WIFI_EVENT_STA_START");
+            ESP_LOGI("wifi_custom", "Wi-Fi STATION started successfully \r\n");
         }
+        else if (event_id == WIFI_EVENT_STA_DISCONNECTED)
+        {
+            wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
+            ESP_LOGW("wifi_custom", "Wi-Fi disconnected, reason: %d", event->reason);        
+            switch (event->reason)
+            {
 
-        memcpy(ssid, evt->ssid, sizeof(evt->ssid));
-        memcpy(password, evt->password, sizeof(evt->password));
-        ESP_LOGI("wifi_custom", "SSID:%s", ssid);
-        ESP_LOGI("wifi_custom", "PASSWORD:%s", password);
-        if (evt->type == SC_TYPE_ESPTOUCH_V2) {
-            ESP_ERROR_CHECK( esp_smartconfig_get_rvd_data(rvd_data, sizeof(rvd_data)) );
-            ESP_LOGI("wifi_custom", "RVD_DATA:");
-            for (int i=0; i<33; i++) {
-                printf("%02x ", rvd_data[i]);
+                case WIFI_REASON_ASSOC_LEAVE:
+                {
+                    ESP_LOGE("wifi_custom", "STA left");
+                    break;
+                }
+
+                case WIFI_REASON_AUTH_FAIL:
+                {
+                    ESP_LOGE("wifi_custom", "Authentication failed. Wrong credentials provided.");
+                    break;
+                }
+
+                case WIFI_REASON_NO_AP_FOUND:
+                {
+                    ESP_LOGE("wifi_custom", "STA AP Not found");
+                    break;
+                }
+
+                default:
+                {
+
+                }
+                break;
             }
-            printf("\n");
+            xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+            if(wifi_station_cb.wifi_sta_disconnected != NULL)
+            {
+                wifi_station_cb.wifi_sta_disconnected(NULL, NULL);
+            }
         }
-
-        ESP_ERROR_CHECK( esp_wifi_disconnect() );
-        // Store SSID and password in NVS
-        ESP_LOGI("wifi_custom", "Storing SSID: %s, password: %s in NVS", wifi_config.sta.ssid, wifi_config.sta.password);
-        ESP_ERROR_CHECK( esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-        xEventGroupSetBits(s_wifi_event_group, ESPTOUCH_GOT_CREDENTIAL);
-        esp_wifi_connect();
-    } 
-    else if (event_base == SC_EVENT && event_id == SC_EVENT_SEND_ACK_DONE) 
+        else
+        {
+            ESP_LOGW("wifi_custom", "Unknown WIFI_EVENT %ld", event_id);
+        }
+    }
+    else
     {
-        ESP_LOGI("wifi_custom", "Smartconfig finished send ACK");
-        esp_smartconfig_stop();
+        ESP_LOGW("wifi_custom", "Unknown event base %s, event id %ld", event_base, event_id);
     }
 }
 
 int wifi_init_sta(void)
 {
     s_wifi_event_group = xEventGroupCreate();
-
+    if(s_wifi_event_group == NULL)
+    {
+        ESP_LOGE("wifi_custom", "Failed to create Wi-Fi event group");
+        return -1;
+    }
     do
     {
         /* Create and init lwIP related stuffs */
@@ -264,8 +328,6 @@ int wifi_init_sta(void)
         if(ESP_OK != esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL) )
             break; 
         if(ESP_OK != esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL) )
-            break;
-        if(ESP_OK != esp_event_handler_register(SC_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL) )
             break;
 
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -285,6 +347,8 @@ int wifi_init_sta(void)
                 .threshold.authmode = WIFI_AUTH_WPA2_PSK,
             },
         };
+        memcpy(ssid, EXAMPLE_ESP_WIFI_SSID, strlen(EXAMPLE_ESP_WIFI_SSID));
+        memcpy(password, EXAMPLE_ESP_WIFI_PASS, strlen(EXAMPLE_ESP_WIFI_PASS));
 
         #if WIFI_CONFIG_LOAD_CREDENTIAL_NVS
             wifi_config_t wifi_config_loaded = {0};
@@ -315,7 +379,7 @@ int wifi_init_sta(void)
     return -1;
 }
 
-int wifi_custom_init(void)
+int wifi_custom_init(wifi_sta_callback_t* station_cb)
 {
     esp_log_level_set("wifi_custom", ESP_LOG_INFO);
     if ( wifi_custom__getCA(wifi_cert, WIFI_CERT_MAX_LEN) != 0)
@@ -324,8 +388,17 @@ int wifi_custom_init(void)
     }
 
     ESP_LOGI("wifi_custom", "Initializing Wi-Fi station \r\n");
-
-    return wifi_init_sta();
+    if ( wifi_init_sta() != 0)
+    {
+        ESP_LOGE("wifi_custom", "Failed to initialize Wi-Fi station");
+        return -1;
+    }
+    if(station_cb != NULL)
+    {
+        wifi_station_cb = *station_cb;
+    }
+    esp_log_level_set("wifi_custom", MODULE_DEFAULT_LOG_LEVEL);
+    return 0;
 }
 
 
@@ -345,13 +418,12 @@ int wifi_custom__power_on(void)
     {
         ESP_LOGE("wifi_custom", "esp_wifi_connect() failed with error %d", status);
     }
-    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
-     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
+    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or got credential from smartconfig*/
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT | ESPTOUCH_GOT_CREDENTIAL,
+            WIFI_CONNECTED_BIT | ESPTOUCH_GOT_CREDENTIAL,
             pdFALSE,
             pdFALSE,
-            pdMS_TO_TICKS(15000));
+            pdMS_TO_TICKS(WIFI_CONN_TIMEOUT_MS));
 
     if ((bits & WIFI_CONNECTED_BIT) || (bits & ESPTOUCH_GOT_CREDENTIAL))
     {
@@ -359,16 +431,21 @@ int wifi_custom__power_on(void)
         {
             ESP_LOGI("wifi_custom", "connected to ap SSID:%s password:%s", ssid, password);
         }
-        wifi_on_connected_cb();
+        wifi_on_connected_cb(); // Keep to ensure backward compatible
+        if(wifi_station_cb.wifi_sta_connected != NULL)
+        {
+            wifi_station_cb.wifi_sta_connected(NULL, NULL);
+        }
         return 0;
-    }
-    else if (bits & WIFI_FAIL_BIT)
-    {
-        ESP_LOGE("wifi_custom", "Failed to connect to SSID:%s, password:%s", ssid, password);
     }
     else
     {
         ESP_LOGE("wifi_custom", "Timeout to connect");
+        ESP_LOGE("wifi_custom", "Failed to connect to SSID:%s, password:%s", ssid, password);
+        if(wifi_station_cb.wifi_sta_failed != NULL)
+        {
+            wifi_station_cb.wifi_sta_failed(NULL, NULL);
+        }
     }
     return -1;
 } 
@@ -392,8 +469,8 @@ int wifi_custom__connected(void)
         ESP_LOGI("wifi_custom", "Wi-Fi is not connected");
         return 0;
     }
-    
 }
+
 //Implements esp_wifi functions to get the current time.
 long wifi_custom__get_time(void)
 {
