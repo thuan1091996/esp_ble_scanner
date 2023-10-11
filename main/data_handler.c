@@ -16,6 +16,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "cJSON.h"
 #include "task_common.h"
 
 #include "data_handler.h"
@@ -26,7 +27,8 @@
 /******************************************************************************
 * Module Preprocessor Macros
 *******************************************************************************/
-#define MODULE_NAME             "data_handler"
+#define MODULE_NAME                     "data_handler"
+#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_WARN
 /******************************************************************************
 * Module Typedefs
 *******************************************************************************/
@@ -53,16 +55,26 @@ void data_handling_task(void* param)
         ESP_LOGE(MODULE_NAME, "Create data msg queue failed");
         vTaskDelete(NULL);
     }
-    
+    esp_log_level_set(MODULE_NAME, MODULE_DEFAULT_LOG_LEVEL);
     while(1)
     {
         sensor_data_packet_t recv_data = {0};
         if(xQueueReceive(sensor_data_queue, &recv_data, portMAX_DELAY) == pdTRUE)
         {
+            char str_json[SENSOR_DATA_JSON_MAX_LEN] = {0};
+            if(sensor_data_format_json(&recv_data, str_json, SENSOR_DATA_JSON_MAX_LEN) != 0)
+            {
+                ESP_LOGE(MODULE_NAME, "Format sensor data to JSON failed");
+            }
+            else
+            {
+                ESP_LOGI(MODULE_NAME, "JSON: %s", str_json);
+            }
+#if (SENSOR_DATA_CONF_DUMP_RAW != 0 )
             ESP_LOGI(MODULE_NAME, "Received data from sensor");
             ESP_LOGI(MODULE_NAME, "Device addr: %02X:%02X:%02X:%02X:%02X:%02X", 
-                    recv_data.device_addr[0], recv_data.device_addr[1], recv_data.device_addr[2],
-                    recv_data.device_addr[3], recv_data.device_addr[4], recv_data.device_addr[5]);
+                                    recv_data.device_addr[0], recv_data.device_addr[1], recv_data.device_addr[2],
+                                    recv_data.device_addr[3], recv_data.device_addr[4], recv_data.device_addr[5]);
             ESP_LOGI(MODULE_NAME, "FCNT: %ld", recv_data.sensor_payload.fcnt);
             ESP_LOGI(MODULE_NAME, "ACL_X: %.02f", recv_data.sensor_payload.acl_x);
             ESP_LOGI(MODULE_NAME, "ACL_Y: %.02f", recv_data.sensor_payload.acl_y);
@@ -70,6 +82,7 @@ void data_handling_task(void* param)
             ESP_LOGI(MODULE_NAME, "GYRO_X: %.02f", recv_data.sensor_payload.gyro_x);
             ESP_LOGI(MODULE_NAME, "GYRO_Y: %.02f", recv_data.sensor_payload.gyro_y);
             ESP_LOGI(MODULE_NAME, "GYRO_Z: %.02f", recv_data.sensor_payload.gyro_z);
+#endif /* End of (SENSOR_DATA_CONF_DUMP_RAW != 0 ) */
         }
         else
         {
@@ -123,5 +136,80 @@ int sensor_data_sending(uint8_t* data, uint16_t len)
         return -1;
     }
     return 0;
+}
+
+/*
+ * @brief: Format sensor data packet to JSON string
+ * @param (in): sensor_data 
+ * @param (out): json_str
+ * @return int: 0 if success, -1 if failed
+ * @note
+ *          Target format
+ *          {
+ *              "addr": "XX:XX:XX:XX:XX:XX"
+ *              "sensor": 
+ *               {
+ *                  "fcnt": 0, // Frame counter - 4B integer
+ *                  "aclx": 0, // X-axis acceleration - 4B float
+ *                  "acly": 0, // Y-axis acceleration - 4B float
+ *                  "aclz": 0, // Z-axis acceleration - 4B float
+ *                  "gyrx": 0, // X-axis gyroscope - 4B float
+ *                  "gyry": 0, // Y-axis gyroscope - 4B float
+ *                  "gyrz": 0, // Z-axis gyroscope - 4B float
+ *               }
+ *          }
+ */
+int sensor_data_format_json(sensor_data_packet_t* sensor_data_packet, char* json_str, uint16_t json_str_max_len)
+{
+    int status = 0 ;
+    cJSON *root = NULL;
+    root = cJSON_CreateObject();
+    if(root == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Create JSON object failed");
+        return -1;
+    }
+
+    do
+    {
+        // Add sensor data
+        cJSON *sensor_data = NULL;
+        sensor_data = cJSON_CreateObject();
+        if(sensor_data == NULL)
+        {
+            ESP_LOGE(MODULE_NAME, "Create JSON object failed");
+            status = -1;
+            break;
+        }
+        // Add device address
+        char addr_str[18] = {0};
+        sprintf(addr_str, "%02X:%02X:%02X:%02X:%02X:%02X", 
+                            sensor_data_packet->device_addr[0], sensor_data_packet->device_addr[1], sensor_data_packet->device_addr[2],
+                            sensor_data_packet->device_addr[3], sensor_data_packet->device_addr[4], sensor_data_packet->device_addr[5]);
+        cJSON_AddStringToObject(root, "addr", addr_str);
+        cJSON_AddNumberToObject(sensor_data, "fcnt", sensor_data_packet->sensor_payload.fcnt);
+        cJSON_AddNumberToObject(sensor_data, "aclx", sensor_data_packet->sensor_payload.acl_x);
+        cJSON_AddNumberToObject(sensor_data, "acly", sensor_data_packet->sensor_payload.acl_y);
+        cJSON_AddNumberToObject(sensor_data, "aclz", sensor_data_packet->sensor_payload.acl_z);
+        cJSON_AddNumberToObject(sensor_data, "gyrx", sensor_data_packet->sensor_payload.gyro_x);
+        cJSON_AddNumberToObject(sensor_data, "gyry", sensor_data_packet->sensor_payload.gyro_y);
+        cJSON_AddNumberToObject(sensor_data, "gyrz", sensor_data_packet->sensor_payload.gyro_z);
+        cJSON_AddItemToObject(root, "sensor", sensor_data);
+        char* str_json = cJSON_PrintUnformatted(root);
+        if(str_json == NULL)
+        {
+            ESP_LOGE(MODULE_NAME, "Create JSON string failed");
+            status = -1;
+            break;        
+        }
+        if(strlen(str_json) > json_str_max_len)
+        {
+            ESP_LOGW(MODULE_NAME, "JSON string is too long (%d/%d), data will be truncated", strlen(str_json), json_str_max_len);
+        }
+        memcpy(json_str, str_json, json_str_max_len);
+        free(str_json);
+    } while (0);
+	cJSON_Delete(root);
+    return status;
 }
 

@@ -32,8 +32,9 @@
 /******************************************************************************
 * Preprocessor Constants
 *******************************************************************************/
-#define SENSOR_DATA_HEADER      (0xAA)
-
+#define SENSOR_DATA_HEADER              (0xAA)
+#define SENSOR_DATA_JSON_MAX_LEN        (256) // In bytes
+#define SENSOR_DATA_CONF_DUMP_RAW       (0) // 1 -> log raw sensor data
 /******************************************************************************
 * Configuration Constants
 *******************************************************************************/
@@ -76,6 +77,7 @@ extern "C"{
 #endif
 void data_handling_task(void* param);
 int sensor_data_sending(uint8_t* data, uint16_t len);
+int sensor_data_format_json(sensor_data_packet_t* sensor_data_packet, char* json_str, uint16_t json_str_max_len);
 #ifdef __cplusplus
 } // extern "C"
 #endif
