@@ -17,4 +17,5 @@ idf_component_register(
         "esp_wifi"
         "bt"
         "json"
+        "actor-framework"
 )
