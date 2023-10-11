@@ -11,6 +11,7 @@
 #include "sdkconfig.h"
 #include "nvs_flash.h"
 
+#include "actor.h"
 #include "task_common.h"
 
 #include "data_handler.h"
@@ -23,7 +24,8 @@
 #define MODULE_NAME                                 "main"
 
 #define APP_CONF_ENABLE_BLE_GATTC                   (1)
-#define APP_CONF_ENABLE_WIFI                        (0)
+#define APP_CONF_WIFI_ENABLE                        (1)
+#define APP_CONF_WIFI_AUTO_RECONNECT                (1) // If Wi-Fi is disconnected, automatically reconnect
 #define APP_CONF_ENABLE_MQTT                        (0)
 /******************************************************************************
 * Module Preprocessor Macros
@@ -51,7 +53,16 @@ TaskInitParams_t const TasksTable[] =
 *******************************************************************************/
 
 /******************************************************************************
-* Function Definitions
+* App event callback functions
+*******************************************************************************/
+/* BLE callbacks */
+void app_ble_data_handling(void* p_data, void* data_len);
+
+/* Wi-Fi callbacks */
+void app_wifi_connected_cb(void* p_data, void* data_len);
+void app_wifi_disconnected_cb(void* p_data, void* data_len);
+/******************************************************************************
+* App init functions
 *******************************************************************************/
 int nvs_init()
 {
@@ -70,22 +81,6 @@ int nvs_init()
     }
     ESP_LOGI("nvs", "NVS Flash initialized \r\n");   
     return SUCCESS;
-}
-
-void app_ble_data_handling(void* p_data, void* data_len)
-{
-    ble_client_packet_t* p_ble_packet = (ble_client_packet_t*)p_data;
-    if(p_ble_packet == NULL || p_ble_packet->p_payload == NULL)
-    {
-        ESP_LOGE(MODULE_NAME, "Invalid BLE packet");
-        return;
-    }
-    uint16_t raw_sensor_data_len = sizeof(p_ble_packet->ble_addr) + p_ble_packet->payload_len;
-    uint8_t raw_sensor_data[raw_sensor_data_len];
-    memset(raw_sensor_data, 0, raw_sensor_data_len);
-    memcpy(raw_sensor_data, p_ble_packet->ble_addr, sizeof(p_ble_packet->ble_addr));
-    memcpy(raw_sensor_data + sizeof(p_ble_packet->ble_addr), p_ble_packet->p_payload, p_ble_packet->payload_len);
-    sensor_data_sending(raw_sensor_data, raw_sensor_data_len);
 }
 
 int app_ble_client_init()
@@ -109,59 +104,53 @@ int app_ble_client_init()
     return SUCCESS;
 }
 
+int app_wifi_init()
+{
+    // Initialize Wi-Fi
+    wifi_sta_callback_t wifi_sta_callback = 
+    {
+        .wifi_sta_connected = &app_wifi_connected_cb,
+        .wifi_sta_disconnected = &app_wifi_disconnected_cb,
+    };
+
+    if( 0 != wifi_custom_init(&wifi_sta_callback))
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to initialize Wi-Fi");
+        return -1;
+    }
+
+    if ( 0 != smartconfig_init())
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to initialize SmartConfig");
+    }
+
+    return 0;
+}
+
 void app_main(void)
 {
     nvs_init();
 
-    #if (APP_CONF_ENABLE_WIFI != 0)
-    if ( 0 != wifi_custom_init())
+    #if (APP_CONF_WIFI_ENABLE != 0)
+    if (0 != app_wifi_init())
     {
         ESP_LOGE(MODULE_NAME, "Failed to initialize Wi-Fi");
-        return;
     }
-
     // Connect to Wi-Fi
-    for(uint8_t retry_count=0; retry_count<2; retry_count++)
+    if (wifi_custom__power_on() != 0)
     {
-        if ( 0 == wifi_custom__power_on())
-        {
-            ESP_LOGI(MODULE_NAME, "Connected to Wi-Fi");
-            break;
-        }
-        else
-        {
-            ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi. Retrying [%d/%d]...", retry_count+1, 2);
-        }
+        ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi");
     }
-
-    if(wifi_custom__connected() != true)
+    else
     {
-        ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi. Running ESP SmartConfig...");
-        wifi_custom__power_off();
-        if ( 0 != smartconfig_init())
-        {
-            ESP_LOGE(MODULE_NAME, "Failed to run ESP SmartConfig. Aborting...");
-            return;
-        }
-        ESP_LOGI(MODULE_NAME, "Waiting for Wi-Fi config with ESPTouch...");
-        vTaskDelay(10000 / portTICK_PERIOD_MS);
-        if ( 0 == wifi_custom__power_on())
-        {
-            ESP_LOGI(MODULE_NAME, "Connected to Wi-Fi");
-        }
-        else
-        {
-            ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi. Aborting...");
-            return;
-        }
+        ESP_LOGI(MODULE_NAME, "Connected to Wi-Fi");
     }
-    #endif /* End of (APP_CONF_ENABLE_WIFI != 0) */
+    #endif /* End of (APP_CONF_WIFI_ENABLE != 0) */
 
     #if (APP_CONF_ENABLE_BLE_GATTC != 0)
     if ( 0 != app_ble_client_init())
     {
         ESP_LOGE(MODULE_NAME, "Failed to initialize BLE GATTC");
-        return;
     }
     #endif /* End of (APP_CONF_ENABLE_BLE_GATTC != 0) */
     
@@ -176,4 +165,63 @@ void app_main(void)
                     TasksTable[idx].TaskHandle);        /* Task Handle*/
         assert(NULL != TasksTable[idx].TaskHandle);
     }
+}
+
+
+
+void app_ble_data_handling(void* p_data, void* data_len)
+{
+    ble_client_packet_t* p_ble_packet = (ble_client_packet_t*)p_data;
+    if(p_ble_packet == NULL || p_ble_packet->p_payload == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Invalid BLE packet");
+        return;
+    }
+    uint16_t raw_sensor_data_len = sizeof(p_ble_packet->ble_addr) + p_ble_packet->payload_len;
+    uint8_t raw_sensor_data[raw_sensor_data_len];
+    memset(raw_sensor_data, 0, raw_sensor_data_len);
+    memcpy(raw_sensor_data, p_ble_packet->ble_addr, sizeof(p_ble_packet->ble_addr));
+    memcpy(raw_sensor_data + sizeof(p_ble_packet->ble_addr), p_ble_packet->p_payload, p_ble_packet->payload_len);
+    sensor_data_sending(raw_sensor_data, raw_sensor_data_len);
+}
+
+void app_wifi_connected_cb(void* p_data, void* data_len)
+{
+    ESP_LOGI("wifi_callback", "Connected to Wi-Fi");
+}
+
+void app_wifi_disconnected_cb(void* p_data, void* data_len)
+{
+    ESP_LOGI("wifi_callback", "Disconnected from Wi-Fi");
+    // #if (APP_CONF_WIFI_AUTO_RECONNECT != 0)
+    #define WIFI_CONNECT_RETRY_COUNT    (3)
+    static uint8_t wifi_connect_retry_count = 0;
+    do 
+    {
+        wifi_custom__power_on();
+        wifi_connect_retry_count++;
+        ESP_LOGI(MODULE_NAME, "Retry connecting to Wi-Fi before run Smartconfig (%d/%d)...", wifi_connect_retry_count, WIFI_CONNECT_RETRY_COUNT);
+    } while( (!wifi_custom__connected() && (wifi_connect_retry_count < WIFI_CONNECT_RETRY_COUNT)) );
+
+    // Check if connected, if still not launch SmartConfig
+    if(wifi_custom__connected() != true)
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi. Running ESP SmartConfig...");
+        wifi_custom__power_off();
+        if (smartconfig_start() != 0)
+        {
+            ESP_LOGE(MODULE_NAME, "Failed to get Wi-Fi credential with smartconfig after timeout");
+            smartconfig_stop();
+        }
+        else
+        {
+            ESP_LOGI(MODULE_NAME, "Obtained Wi-Fi credential with Smartconfig, trying to connect");
+            wifi_custom__power_on();
+        }
+    }
+    else
+    {
+        wifi_connect_retry_count = 0;
+    }
+    // #endif /* End of (APP_CONF_WIFI_AUTO_RECONNECT != 0) */
 }

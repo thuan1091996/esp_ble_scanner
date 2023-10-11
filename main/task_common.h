@@ -23,6 +23,8 @@
 #include "esp_event.h"
 #include "esp_log.h"
 
+#include "actor.h"
+#include "event.h"
 /******************************************************************************
 * Preprocessor Constants
 *******************************************************************************/
@@ -46,7 +48,18 @@
 /******************************************************************************
 * Typedefs
 *******************************************************************************/
+enum app_signal
+{
+    /* Wi-Fi events */
+	WIFI_CONNECTED = USER_SIG,
+    WIFI_DISCONNECTED,
 
+    /* MQTT events*/
+    MQTT_CONNECTED,
+    MQTT_DISCONNECTED,
+	/* .... */
+	MAX_SIG
+};
 
 /******************************************************************************
 * Module Typedefs
@@ -70,6 +83,7 @@ extern TaskHandle_t xdata_handler;
 
 extern TaskInitParams_t const TasksTable[];
 
+extern ActiveId_t p_mqtt_actor;
 /******************************************************************************
 * Function Prototypes
 *******************************************************************************/
