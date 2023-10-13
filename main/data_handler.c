@@ -56,12 +56,17 @@ void data_handling_task(void* param)
         vTaskDelete(NULL);
     }
     esp_log_level_set(MODULE_NAME, MODULE_DEFAULT_LOG_LEVEL);
+    char str_json[SENSOR_DATA_JSON_MAX_LEN];
     while(1)
     {
         sensor_data_packet_t recv_data = {0};
-        if(xQueueReceive(sensor_data_queue, &recv_data, portMAX_DELAY) == pdTRUE)
+        if(xQueueReceive(sensor_data_queue, &recv_data, portMAX_DELAY) != pdTRUE)
         {
-            char str_json[SENSOR_DATA_JSON_MAX_LEN] = {0};
+            ESP_LOGE(MODULE_NAME, "Receive data from queue failed");
+        }
+        else
+        {
+            memset(str_json, 0, SENSOR_DATA_JSON_MAX_LEN);
             if(sensor_data_format_json(&recv_data, str_json, SENSOR_DATA_JSON_MAX_LEN) != 0)
             {
                 ESP_LOGE(MODULE_NAME, "Format sensor data to JSON failed");
@@ -69,7 +74,18 @@ void data_handling_task(void* param)
             else
             {
                 ESP_LOGI(MODULE_NAME, "JSON: %s", str_json);
+                sensor_data_evt_t* p_e = (sensor_data_evt_t*)Event_New(SENSOR_DATA_READY, sizeof(sensor_data_evt_t));
+                if(p_e == NULL)
+                {
+                    ESP_LOGE(MODULE_NAME, "Create event failed");
+                }
+                else
+                {
+                    p_e->sensor_data_json = str_json;
+                    Active_post(p_mqtt_actor, (Evt*)p_e);
+                }
             }
+            ESP_LOGW(MODULE_NAME, "FCNT: %ld", recv_data.sensor_payload.fcnt);
 #if (SENSOR_DATA_CONF_DUMP_RAW != 0 )
             ESP_LOGI(MODULE_NAME, "Received data from sensor");
             ESP_LOGI(MODULE_NAME, "Device addr: %02X:%02X:%02X:%02X:%02X:%02X", 
@@ -84,10 +100,7 @@ void data_handling_task(void* param)
             ESP_LOGI(MODULE_NAME, "GYRO_Z: %.02f", recv_data.sensor_payload.gyro_z);
 #endif /* End of (SENSOR_DATA_CONF_DUMP_RAW != 0 ) */
         }
-        else
-        {
-            ESP_LOGE(MODULE_NAME, "Receive data from queue failed");
-        }
+
     }
 }
 

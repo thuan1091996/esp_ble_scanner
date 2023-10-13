@@ -57,6 +57,10 @@ enum app_signal
     /* MQTT events*/
     MQTT_CONNECTED,
     MQTT_DISCONNECTED,
+
+    /* Data event */
+    SENSOR_DATA_READY,
+
 	/* .... */
 	MAX_SIG
 };
@@ -74,6 +78,11 @@ typedef struct
     TaskHandle_t * const TaskHandle;            /*< Pointer to task handle       */
 }TaskInitParams_t;
 
+typedef struct
+{
+    Evt super;
+    char* sensor_data_json;
+}sensor_data_evt_t;
 
 /******************************************************************************
 * Variables
