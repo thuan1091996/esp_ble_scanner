@@ -38,10 +38,10 @@
 /******************************************************************************
 * Configuration Constants
 *******************************************************************************/
-#define MQTT_BROKER_ADDR                "mqtt://test.mosquitto.org"
-#define MQTT_SUB_TOPIC                  "app_cmd"
-#define MQTT_STATUS_TOPIC               "mastering_esp32/sensor_status"
-#define MQTT_DATA_TOPIC                 "mastering_esp32/sensor_data"
+#define MQTT_BROKER_ADDR                        "mqtt://test.mosquitto.org"
+#define MQTT_DEFAULT_SUB_TOPIC                  "app_cmd"
+#define MQTT_DEFAULT_STATUS_TOPIC               "mastering_esp32/sensor_status"
+#define MQTT_DEFAULT_DATA_TOPIC                 "mastering_esp32/sensor_data"
 /******************************************************************************
 * Macros
 *******************************************************************************/
@@ -62,5 +62,13 @@
 *******************************************************************************/
 void mqtt_client_init();
 void mqtt_task(void* param);
+int mqtt_actor_init();
+
+int mqtt_update_broker_addr(char* addr);
+int mqtt_connect();
+int mqtt_disconnect();
+
+int mqtt_publish(const char *topic, const char *data, int len, int qos, int retain);
+int mqtt_subscribe(const char *topic, int qos);
 #endif // MQTT_CLIENT_H_
 /*** End of File **************************************************************/

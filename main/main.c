@@ -26,7 +26,8 @@
 #define APP_CONF_ENABLE_BLE_GATTC                   (1)
 #define APP_CONF_WIFI_ENABLE                        (1)
 #define APP_CONF_WIFI_AUTO_RECONNECT                (1) // If Wi-Fi is disconnected, automatically reconnect
-#define APP_CONF_ENABLE_MQTT                        (0)
+#define APP_CONF_ENABLE_MQTT_TASK                   (0)
+#define APP_CONF_ENABLE_MQTT_ACTOR                  (1)
 /******************************************************************************
 * Module Preprocessor Macros
 *******************************************************************************/
@@ -38,11 +39,12 @@
 /******************************************************************************
 * Module Variable Definitions
 *******************************************************************************/
+static Evt wifi_evt = {0};
 
 TaskInitParams_t const TasksTable[] =
 {
  // Function pointer,	String Name,	            Stack size,		        Parameter,	Priority,	Task Handle
-#if (APP_CONF_ENABLE_MQTT != 0)
+#if (APP_CONF_ENABLE_MQTT_TASK != 0)
     {&mqtt_task,	        "MQTT Task",	        MQTT_TASK_STACK_SIZE,   NULL,       MQTT_TASK_PRIORITY, &xMQTT_handler},
 #endif /* End of (APP_CONF_ENABLE_BLE_GATTC != 0) */
     {&data_handling_task,	"Data Handling Task",	DATA_HANDLING_TASK_STACK_SIZE,  NULL, DATA_HANDLING_TASK_PRIORITY, &xdata_handler},
@@ -130,6 +132,21 @@ int app_wifi_init()
 void app_main(void)
 {
     nvs_init();
+	Framework_Init();
+
+    #if (APP_CONF_ENABLE_BLE_GATTC != 0)
+    if ( 0 != app_ble_client_init())
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to initialize BLE GATTC");
+    }
+    #endif /* End of (APP_CONF_ENABLE_BLE_GATTC != 0) */
+    
+    #if (APP_CONF_ENABLE_MQTT_ACTOR != 0)
+    if (mqtt_actor_init() != 0)
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to initialize MQTT actor");
+    }
+    #endif /* End of (APP_CONF_ENABLE_MQTT_ACTOR != 0) */
 
     #if (APP_CONF_WIFI_ENABLE != 0)
     if (0 != app_wifi_init())
@@ -147,13 +164,6 @@ void app_main(void)
     }
     #endif /* End of (APP_CONF_WIFI_ENABLE != 0) */
 
-    #if (APP_CONF_ENABLE_BLE_GATTC != 0)
-    if ( 0 != app_ble_client_init())
-    {
-        ESP_LOGE(MODULE_NAME, "Failed to initialize BLE GATTC");
-    }
-    #endif /* End of (APP_CONF_ENABLE_BLE_GATTC != 0) */
-    
     // Check array size
     for(uint8_t idx=0; idx< sizeof(TasksTable)/sizeof(TasksTable[0]); idx++)
     {
@@ -188,11 +198,18 @@ void app_ble_data_handling(void* p_data, void* data_len)
 void app_wifi_connected_cb(void* p_data, void* data_len)
 {
     ESP_LOGI("wifi_callback", "Connected to Wi-Fi");
+    // Post to MQTT actor
+    wifi_evt.sig = WIFI_CONNECTED;
+    Active_post(p_mqtt_actor, (Evt*) &wifi_evt);
 }
 
 void app_wifi_disconnected_cb(void* p_data, void* data_len)
 {
     ESP_LOGI("wifi_callback", "Disconnected from Wi-Fi");
+    // Post to MQTT actor
+    wifi_evt.sig = WIFI_DISCONNECTED;
+    Active_post(p_mqtt_actor, (Evt*) &wifi_evt);
+    
     // #if (APP_CONF_WIFI_AUTO_RECONNECT != 0)
     #define WIFI_CONNECT_RETRY_COUNT    (3)
     static uint8_t wifi_connect_retry_count = 0;
