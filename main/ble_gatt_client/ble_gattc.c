@@ -42,9 +42,17 @@
  * Module Preprocessor Constants
  *******************************************************************************/
 #define MODULE_NAME                             "BLE_GATTC"
-#define MODULE_DEFAULT_LOG_LEVEL                ESP_LOG_WARN        
-#define PROFILE_NUM                             1
+#define MODULE_DEFAULT_LOG_LEVEL                ESP_LOG_DEBUG
+
+#define BLE_GATTC_CONF_WHITE_LIST               1
+#define BLE_GATTC_CONF_WHITE_LIST_MAX           4
+
+#define PROFILE_NUM                             BLE_GATTC_CONF_WHITE_LIST_MAX
 #define PROFILE_A_APP_ID                        0
+#define PROFILE_B_APP_ID                        1
+#define PROFILE_C_APP_ID                        2
+#define PROFILE_D_APP_ID                        3
+
 
 /******************************************************************************
  * Module Preprocessor Macros
@@ -65,6 +73,19 @@ struct gattc_profile_inst
     uint16_t char_handle;
     esp_bd_addr_t remote_bda;
 };
+
+int PROFILE_ID[PROFILE_NUM] = {PROFILE_A_APP_ID, PROFILE_B_APP_ID, PROFILE_C_APP_ID, PROFILE_D_APP_ID};
+static int g_current_app_id = PROFILE_A_APP_ID;
+
+int ble_gattc_profile_get_current_app_id(void)
+{
+    return g_current_app_id;
+}
+
+void ble_gattc_profile_set_current_app_id(int app_id)
+{
+    g_current_app_id = app_id;
+}
 
 /******************************************************************************
  * Function Prototypes
@@ -116,26 +137,37 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
         case ESP_GATTC_CONNECT_EVT:
         {
             ESP_LOGI(MODULE_NAME, "8. Connection established");
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_CONNECT_EVT conn_id %d, if %d", p_data->connect.conn_id, gattc_if);
-            gl_profile_tab[PROFILE_A_APP_ID].conn_id = p_data->connect.conn_id;
-            memcpy(gl_profile_tab[PROFILE_A_APP_ID].remote_bda, p_data->connect.remote_bda, sizeof(esp_bd_addr_t));
-            ESP_LOGI(MODULE_NAME, "REMOTE BDA:");
-            esp_log_buffer_hex(MODULE_NAME, gl_profile_tab[PROFILE_A_APP_ID].remote_bda, sizeof(esp_bd_addr_t));
-            ESP_LOGI(MODULE_NAME, "9. Configuring MTU");
-            esp_err_t mtu_ret = esp_ble_gattc_send_mtu_req(gattc_if, p_data->connect.conn_id);
-            if (mtu_ret)
-            {
-                ESP_LOGE(MODULE_NAME, "config MTU error, error code = %x", mtu_ret);
-            }
             break;
         }
         case ESP_GATTC_OPEN_EVT:
+            ESP_LOGI(MODULE_NAME, "ESP_GATTC_OPEN_EVT conn_id %d, if %d, status %d, mtu %d", p_data->open.conn_id, gattc_if, p_data->open.status, p_data->open.mtu);
             if (param->open.status != ESP_GATT_OK)
             {
                 ESP_LOGE(MODULE_NAME, "open failed, status %d", p_data->open.status);
                 break;
             }
+
             ESP_LOGI(MODULE_NAME, "8a. Opening of the connection was done successfully");
+            // Store connection info into profile table
+            int current_profile_id = ble_gattc_profile_get_current_app_id();
+            memcpy(gl_profile_tab[current_profile_id].remote_bda, p_data->open.remote_bda, 6);
+            gl_profile_tab[current_profile_id].conn_id = p_data->open.conn_id;
+            // Get address string
+            char addr_str[18] = {0};
+            sprintf(addr_str,"%02X:%02X:%02X:%02X:%02X:%02X", 
+                            gl_profile_tab[current_profile_id].remote_bda[0], gl_profile_tab[current_profile_id].remote_bda[1],
+                            gl_profile_tab[current_profile_id].remote_bda[2], gl_profile_tab[current_profile_id].remote_bda[3],
+                            gl_profile_tab[current_profile_id].remote_bda[4], gl_profile_tab[current_profile_id].remote_bda[5]);
+            ESP_LOGI(MODULE_NAME,"PrsofileID: %d, ConnID: %d, BDA: %s", current_profile_id, gl_profile_tab[current_profile_id].conn_id, addr_str);
+
+            ESP_LOGI(MODULE_NAME, "8b. Send configuring MTU");
+            esp_err_t mtu_ret = esp_ble_gattc_send_mtu_req(gattc_if, p_data->connect.conn_id);
+            if (mtu_ret)
+            {
+                ESP_LOGE(MODULE_NAME, "config MTU error, error code = %x", mtu_ret);
+            }
+
+            #if (BLE_CONF_UPDATE_CONN_PARAM != 0)
             esp_ble_conn_update_params_t new_config;
             new_config.min_int = 10;  // x 1.25ms
             new_config.max_int = 100; // x 1.25ms
@@ -143,7 +175,7 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
             new_config.timeout = 500; // x 6.25ms, time before peripheral will assume connection is dropped.
             // memcpy(new_config.bda,  &whitelist_addr[0], 6);
             // esp_ble_gap_update_conn_params(&new_config);
-            ESP_LOGI(MODULE_NAME, "open success");
+            #endif /* End of (BLE_CONF_UPDATE_CONN_PARAM != 0) */
 
             break;
         case ESP_GATTC_DIS_SRVC_CMPL_EVT:
@@ -297,15 +329,14 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
             break;
 
         case ESP_GAP_BLE_SCAN_START_COMPLETE_EVT:
-            ESP_LOGI(MODULE_NAME, "3. Scanning\n");
             // scan start complete event to indicate scan start successfully or failed
             if (param->scan_start_cmpl.status != ESP_BT_STATUS_SUCCESS)
             {
-                ESP_LOGE(MODULE_NAME, "scan start failed, error status = %x", param->scan_start_cmpl.status);
+                ESP_LOGE(MODULE_NAME, "3. Scan started failed, error status = %x", param->scan_start_cmpl.status);
             }
             else
             {
-                ESP_LOGI(MODULE_NAME, "scan start success");
+                ESP_LOGI(MODULE_NAME, "3. Scan started successfully");
             }
             break;
 
@@ -317,13 +348,26 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                 case ESP_GAP_SEARCH_INQ_RES_EVT:
                     ESP_LOGD(MODULE_NAME, "4. Found a device");
                     uint8_t adv_payload_len;
-                    uint8_t* p_adv_payload = esp_ble_resolve_adv_data(scan_result->scan_rst.ble_adv, ESP_BLE_AD_MANUFACTURER_SPECIFIC_TYPE, &adv_payload_len);
-                    if(p_adv_payload != NULL) 
-                    {
-                        // if(p_adv_payload[0] != XIAO_PAYLOAD_HEADER_VALUE)
-                        //     break;
+                    uint8_t* p_adv_payload = esp_ble_resolve_adv_data(scan_result->scan_rst.ble_adv, ESP_BLE_AD_TYPE_NAME_CMPL, &adv_payload_len);
+                    // if ( (p_adv_payload != NULL) && (NULL != strstr((const char*)p_adv_payload, "IMU")) )
+                    if ( (p_adv_payload != NULL) && (NULL != strstr((const char*)p_adv_payload, "XIAO")) )
+                    {   //5. Find the interested device to connect if required (based on adv name for example)
+                        
+                        //6. Stop the scan process
+                        if (esp_ble_gap_stop_scanning() != ESP_OK)
+                        {
+                            ESP_LOGE(MODULE_NAME, "Failed to stop scanning");
+                        }
+                        //7. Tries to open a connection to the remote device using the esp_ble_gattc_open()
+                        int current_profile_id = ble_gattc_profile_get_current_app_id();
+                        esp_ble_gattc_open(gl_profile_tab[current_profile_id].gattc_if, scan_result->scan_rst.bda, scan_result->scan_rst.ble_addr_type, true);
                         if(ble_client_callback.ble_found_adv_packet_cb != NULL)
                         {
+
+
+                            
+                            
+                            #if 0
                             ble_client_packet_t ble_client_packet;
                             memcpy(ble_client_packet.ble_addr, scan_result->scan_rst.bda, BLE_ADDR_LEN);
                             ble_client_packet.addr_type = scan_result->scan_rst.ble_addr_type;
@@ -331,6 +375,7 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                             ble_client_packet.p_payload = p_adv_payload;
                             ble_client_packet.payload_len = adv_payload_len;
                             ble_client_callback.ble_found_adv_packet_cb(&ble_client_packet, NULL);
+                            #endif
                         }
                         #if 0
                         ESP_LOGW(MODULE_NAME, "======= New device is found =======");
@@ -340,10 +385,6 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                         #endif
 
                     }
-
-                    //5. Find the interested device to connect if required (based on adv name for example)
-                    //6. Stop the scan process: esp_ble_gap_stop_scanning();
-                    //7. Tries to open a connection to the remote device using the esp_ble_gattc_open()
                     break;
 
 
@@ -409,12 +450,11 @@ void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_ga
         if (param->reg.status == ESP_GATT_OK)
         {
             gl_profile_tab[param->reg.app_id].gattc_if = gattc_if;
+            ESP_LOGI(MODULE_NAME, "Register app success, app_id %d: gattc_if %d", param->reg.app_id, gattc_if);
         }
         else
         {
-            ESP_LOGI(MODULE_NAME, "reg app failed, app_id %04x, status %d",
-                     param->reg.app_id,
-                     param->reg.status);
+            ESP_LOGI(MODULE_NAME, "reg app failed, app_id %d, status %d", param->reg.app_id, param->reg.status);
             return;
         }
     }
