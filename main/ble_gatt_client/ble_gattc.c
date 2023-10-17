@@ -53,7 +53,8 @@
 #define PROFILE_C_APP_ID                        2
 #define PROFILE_D_APP_ID                        3
 
-
+#define REMOTE_SERVICE_UUID                     0xFF00 //
+#define REMOTE_NOTIFY_CHAR_UUID                 0xFF01 //
 /******************************************************************************
  * Module Preprocessor Macros
  *******************************************************************************/
@@ -71,21 +72,9 @@ struct gattc_profile_inst
     uint16_t service_start_handle;
     uint16_t service_end_handle;
     uint16_t char_handle;
+    uint16_t descr_handle;
     esp_bd_addr_t remote_bda;
 };
-
-int PROFILE_ID[PROFILE_NUM] = {PROFILE_A_APP_ID, PROFILE_B_APP_ID, PROFILE_C_APP_ID, PROFILE_D_APP_ID};
-static int g_current_app_id = PROFILE_A_APP_ID;
-
-int ble_gattc_profile_get_current_app_id(void)
-{
-    return g_current_app_id;
-}
-
-void ble_gattc_profile_set_current_app_id(int app_id)
-{
-    g_current_app_id = app_id;
-}
 
 /******************************************************************************
  * Function Prototypes
@@ -108,9 +97,66 @@ static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM] = {
 
 ble_client_callback_t ble_client_callback = {0};
 
+int PROFILE_ID[PROFILE_NUM] = {PROFILE_A_APP_ID, PROFILE_B_APP_ID, PROFILE_C_APP_ID, PROFILE_D_APP_ID};
+static int g_current_app_id = PROFILE_A_APP_ID;
+
+
+static esp_bt_uuid_t remote_filter_service_uuid = {
+    .len = ESP_UUID_LEN_16,
+    .uuid = {.uuid16 = REMOTE_SERVICE_UUID,},
+};
+
+static esp_bt_uuid_t remote_filter_char_uuid = {
+    .len = ESP_UUID_LEN_16,
+    .uuid = {.uuid16 = REMOTE_NOTIFY_CHAR_UUID,},
+};
+
+static esp_bt_uuid_t notify_descr_uuid = {
+    .len = ESP_UUID_LEN_16,
+    .uuid = {.uuid16 = ESP_GATT_UUID_CHAR_CLIENT_CONFIG,},
+};
 /******************************************************************************
  * Function Definitions
  *******************************************************************************/
+int ble_gattc_profile_get_current_app_id(void)
+{
+    return g_current_app_id;
+}
+
+int ble_gattc_profile_set_current_app_id(int app_id)
+{
+    if( app_id <0 || app_id >= PROFILE_NUM)
+    {
+        ESP_LOGE(MODULE_NAME, "%d is an invalid app_id", app_id);
+        return -1;
+    }
+    g_current_app_id = app_id;
+    return 0;
+}
+
+int  ble_gattc_profile_set_service_info(int app_id, uint16_t service_start_handle, uint16_t service_end_handle)
+{
+    if( app_id <0 || app_id >= PROFILE_NUM)
+    {
+        ESP_LOGE(MODULE_NAME, "%d is an invalid app_id", app_id);
+        return -1;
+    }
+    gl_profile_tab[app_id].service_start_handle = service_start_handle;
+    gl_profile_tab[app_id].service_end_handle = service_end_handle;
+    return 0;
+}
+
+int ble_gattc_profile_set_char_handle(int app_id, uint16_t char_handle)
+{
+    if( app_id <0 || app_id >= PROFILE_NUM)
+    {
+        ESP_LOGE(MODULE_NAME, "%d is an invalid app_id", app_id);
+        return -1;
+    }
+    gl_profile_tab[app_id].char_handle = char_handle;
+    return 0;
+}
+
 void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param)
 {
     esp_ble_gattc_cb_param_t *p_data = (esp_ble_gattc_cb_param_t *)param;
@@ -158,7 +204,7 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                             gl_profile_tab[current_profile_id].remote_bda[0], gl_profile_tab[current_profile_id].remote_bda[1],
                             gl_profile_tab[current_profile_id].remote_bda[2], gl_profile_tab[current_profile_id].remote_bda[3],
                             gl_profile_tab[current_profile_id].remote_bda[4], gl_profile_tab[current_profile_id].remote_bda[5]);
-            ESP_LOGI(MODULE_NAME,"PrsofileID: %d, ConnID: %d, BDA: %s", current_profile_id, gl_profile_tab[current_profile_id].conn_id, addr_str);
+            ESP_LOGI(MODULE_NAME,"Profile ID: %d, ConnID: %d, BDA: %s", current_profile_id, gl_profile_tab[current_profile_id].conn_id, addr_str);
 
             ESP_LOGI(MODULE_NAME, "8b. Send configuring MTU");
             esp_err_t mtu_ret = esp_ble_gattc_send_mtu_req(gattc_if, p_data->connect.conn_id);
@@ -194,67 +240,112 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                 ESP_LOGE(MODULE_NAME, "config mtu failed, error status = %x", param->cfg_mtu.status);
             }
             ESP_LOGI(MODULE_NAME, "10. Configuring MTU was done successfully");
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_CFG_MTU_EVT, Status %d, MTU %d, conn_id %d", param->cfg_mtu.status, param->cfg_mtu.mtu, param->cfg_mtu.conn_id);
+            ESP_LOGI(MODULE_NAME, "ESP_GATTC_CFG_MTU_EVT, Status %d, MTU %dB, conn_id %d", param->cfg_mtu.status, param->cfg_mtu.mtu, param->cfg_mtu.conn_id);
 
-            ESP_LOGI(MODULE_NAME, "11. Discovering services");
-            esp_ble_gattc_search_service(gattc_if, param->cfg_mtu.conn_id, NULL);
+            ESP_LOGI(MODULE_NAME, "11. Start discover services");
+            esp_ble_gattc_search_service(gattc_if, param->cfg_mtu.conn_id, &remote_filter_service_uuid);
             break;
         case ESP_GATTC_SEARCH_RES_EVT:
         {
-            ESP_LOGI(MODULE_NAME, "SEARCH RES: conn_id = %x is primary service %d", p_data->search_res.conn_id, p_data->search_res.is_primary);
-            ESP_LOGI(MODULE_NAME, "start handle %d end handle %d current handle value %d", p_data->search_res.start_handle, p_data->search_res.end_handle, p_data->search_res.srvc_id.inst_id);
-            if (p_data->search_res.srvc_id.uuid.len == ESP_UUID_LEN_16 && p_data->search_res.srvc_id.uuid.uuid.uuid16 == 0xFE59)
+            ESP_LOGI(MODULE_NAME, "12. Found service with conn_id = %d is %s service", p_data->search_res.conn_id, p_data->search_res.is_primary?"primary":"secondary");
+            ESP_LOGI(MODULE_NAME, "Start handle: %d \r\n End handle: %d \r\n Current handle value: %d",  p_data->search_res.start_handle, p_data->search_res.end_handle, 
+                                                                                            p_data->search_res.srvc_id.inst_id);
+            if (p_data->search_res.srvc_id.uuid.len == ESP_UUID_LEN_16 && p_data->search_res.srvc_id.uuid.uuid.uuid16 == remote_filter_service_uuid.uuid.uuid16)
             {
-                ESP_LOGI(MODULE_NAME, "service found");
-                gl_profile_tab[PROFILE_A_APP_ID].service_start_handle = p_data->search_res.start_handle;
-                gl_profile_tab[PROFILE_A_APP_ID].service_end_handle = p_data->search_res.end_handle;
-                ESP_LOGI(MODULE_NAME, "UUID16: %x", p_data->search_res.srvc_id.uuid.uuid.uuid16);
+                ESP_LOGI(MODULE_NAME, "12a. Found service 0x%X on server with connection id: %d ", remote_filter_service_uuid.uuid.uuid16, p_data->search_res.conn_id);
+                int current_profile_id = ble_gattc_profile_get_current_app_id();
+                if(gl_profile_tab[current_profile_id].conn_id != p_data->search_res.conn_id)
+                {
+                    ESP_LOGE(MODULE_NAME, "Something wrong, connectionid is not match");
+                }
+                if (ble_gattc_profile_set_service_info(current_profile_id, p_data->search_res.start_handle, p_data->search_res.end_handle) != 0)
+                {
+                    ESP_LOGE(MODULE_NAME, "Failed to set service info");
+                }
             }
             break;
         }
         case ESP_GATTC_SEARCH_CMPL_EVT:
             if (p_data->search_cmpl.status != ESP_GATT_OK)
             {
-                ESP_LOGE(MODULE_NAME, "search service failed, error status = %x", p_data->search_cmpl.status);
+                ESP_LOGE(MODULE_NAME, "13. Search service failed, error status = %x", p_data->search_cmpl.status);
                 break;
             }
-            if (p_data->search_cmpl.searched_service_source == ESP_GATT_SERVICE_FROM_REMOTE_DEVICE)
+            ESP_LOGI(MODULE_NAME, "13a. ESP_GATTC_SEARCH_CMPL_EVT - service discovery sucessfully");
+            // Compare gattc_if and conn_id
+            int cur_profile_id = ble_gattc_profile_get_current_app_id();
+            if(gattc_if != gl_profile_tab[cur_profile_id].gattc_if || p_data->search_cmpl.conn_id != gl_profile_tab[cur_profile_id].conn_id)
             {
-                ESP_LOGI(MODULE_NAME, "Get service information from remote device");
+                ESP_LOGE(MODULE_NAME, "Something wrong, gattc_if or conn_id is not match");
             }
-            else if (p_data->search_cmpl.searched_service_source == ESP_GATT_SERVICE_FROM_NVS_FLASH)
+
+            ESP_LOGI(MODULE_NAME, "13b. Start finding char handle for char with UUID 0x%X in conn_id %x", remote_filter_char_uuid.uuid.uuid16, p_data->search_cmpl.conn_id);
+            esp_gattc_char_elem_t remote_filter_char_element = {0};
+            uint16_t number_search_char = 1;
+            int status = esp_ble_gattc_get_char_by_uuid(gattc_if, p_data->search_cmpl.conn_id, 
+                                                        gl_profile_tab[cur_profile_id].service_start_handle,
+                                                        gl_profile_tab[cur_profile_id].service_end_handle,
+                                                        remote_filter_char_uuid, 
+                                                        &remote_filter_char_element,
+                                                        &number_search_char);
+            if (status != ESP_GATT_OK)  
             {
-                ESP_LOGI(MODULE_NAME, "Get service information from flash");
+                ESP_LOGE(MODULE_NAME, "esp_ble_gattc_get_char_by_uuid() error");
+                break;
             }
-            else
+            ESP_LOGI(MODULE_NAME, "13c. Found char handle %d with conn_id %x", remote_filter_char_element.char_handle, p_data->search_cmpl.conn_id);
+            // Update char handle in profile table
+            if (0 != ble_gattc_profile_set_char_handle(p_data->search_cmpl.conn_id, remote_filter_char_element.char_handle))
             {
-                ESP_LOGI(MODULE_NAME, "unknown service source");
+                ESP_LOGE(MODULE_NAME, "Failed to set char handle");
+                break;
             }
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_SEARCH_CMPL_EVT");
+            ESP_LOGI(MODULE_NAME, "13d. Try to register for notification");
+            if (0 != esp_ble_gattc_register_for_notify(gattc_if, gl_profile_tab[cur_profile_id].remote_bda, gl_profile_tab[cur_profile_id].char_handle))
+            {
+                ESP_LOGE(MODULE_NAME, "Failed to register for notify with conn_id %x", p_data->search_cmpl.conn_id);
+            }
+
             break;
 
         case ESP_GATTC_REG_FOR_NOTIFY_EVT:
         {
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_REG_FOR_NOTIFY_EVT");
             if (p_data->reg_for_notify.status != ESP_GATT_OK)
             {
                 ESP_LOGE(MODULE_NAME, "REG FOR NOTIFY failed: error status = %d", p_data->reg_for_notify.status);
+                break;
             }
-            else
+            int cur_profile_id = ble_gattc_profile_get_current_app_id();
+            ESP_LOGI(MODULE_NAME, "14. Register for notify success, start writing to CCC descriptor");
+            esp_gattc_descr_elem_t notify_descr_elem_result = {0};
+            uint16_t count = 1;
+            int status = esp_ble_gattc_get_descr_by_uuid(gattc_if, gl_profile_tab[cur_profile_id].conn_id, 
+                                            gl_profile_tab[cur_profile_id].service_start_handle, gl_profile_tab[cur_profile_id].service_end_handle,
+                                            remote_filter_char_uuid,
+                                            notify_descr_uuid,
+                                            &notify_descr_elem_result,
+                                            &count);
+            if(0 != status)
             {
-                uint16_t count = 0;
-                uint16_t notify_en = 1;
-                esp_gatt_status_t ret_status = esp_ble_gattc_get_attr_count(gattc_if,
-                                                                            gl_profile_tab[PROFILE_A_APP_ID].conn_id,
-                                                                            ESP_GATT_DB_DESCRIPTOR,
-                                                                            gl_profile_tab[PROFILE_A_APP_ID].service_start_handle,
-                                                                            gl_profile_tab[PROFILE_A_APP_ID].service_end_handle,
-                                                                            gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-                                                                            &count);
-                if (ret_status != ESP_GATT_OK)
-                {
-                    ESP_LOGE(MODULE_NAME, "esp_ble_gattc_get_attr_count error");
-                }
+                ESP_LOGE(MODULE_NAME, "esp_ble_gattc_get_descr_by_uuid() error");
+                break;
+            }
+            ESP_LOGI(MODULE_NAME, "14a. Found descriptor handle %d", notify_descr_elem_result.handle);
+            // Update descriptor handle in profile table
+            gl_profile_tab[cur_profile_id].descr_handle = notify_descr_elem_result.handle;
+            //Enable notification
+            ESP_LOGI(MODULE_NAME, "14b. Enable notification");
+            uint16_t notify_en = 1;
+            status = esp_ble_gattc_write_char_descr( gattc_if,  gl_profile_tab[cur_profile_id].conn_id,
+                                gl_profile_tab[cur_profile_id].descr_handle,
+                                sizeof(notify_en),
+                                (uint8_t *)&notify_en,
+                                ESP_GATT_WRITE_TYPE_RSP,
+                                ESP_GATT_AUTH_REQ_NONE);
+            if(0 != status)
+            {
+                ESP_LOGE(MODULE_NAME, "esp_ble_gattc_write_char_descr() error");
+                break;
             }
             break;
         }
@@ -305,6 +396,7 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
             }
             ESP_LOGI(MODULE_NAME, "write char success ");
             break;
+            
         case ESP_GATTC_DISCONNECT_EVT:
             ESP_LOGI(MODULE_NAME, "ESP_GATTC_DISCONNECT_EVT, reason = %d", p_data->disconnect.reason);
             if(BLE_CONF_AUTO_RESCAN != 0)
