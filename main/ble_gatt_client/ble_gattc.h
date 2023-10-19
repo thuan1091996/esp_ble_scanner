@@ -32,8 +32,7 @@
 /******************************************************************************
 * Preprocessor Constants
 *******************************************************************************/
-
-
+#define BLE_GATTC_ATT_INVALID_HANDLE            (0xFFFF)
 /******************************************************************************
 * Configuration Constants
 *******************************************************************************/
@@ -55,20 +54,30 @@
 /******************************************************************************
 * Typedefs
 *******************************************************************************/
+typedef enum
+{
+    PROFILE_A_APP_ID = 0,
+    PROFILE_B_APP_ID,
+    PROFILE_C_APP_ID,
+    PROFILE_D_APP_ID,
+    PROFILE_NUM_MAX
+}app_profile_id;
+
+typedef enum
+{
+    BT_GATT_CCC_DISABLE = 0,
+    BT_GATT_CCC_NOTIFY = 1,
+    BT_GATT_CCC_INDICATE = 2,
+    BT_GATT_ATT_READ = 3,
+}gatt_char_evt_type_value;
+
 typedef struct
 {
-    void (*ble_connected_cb)(void);
-    void (*ble_disconnected_cb)(void);
-    void (*ble_adv_started_cb)(void);
-    void (*ble_adv_stopped_cb)(void);
-}ble_server_callback_t;
-
-
-typedef struct
-{
-    //When found an advertising packet with appropriate filters, this callback will be called
-    void (*ble_found_adv_packet_cb)(void* p_data, void* p_data_len); 
-}ble_client_callback_t;
+    uint8_t evt_type;
+    uint8_t ble_addr[BLE_ADDR_LEN];
+    uint8_t* p_payload;
+    uint16_t payload_len;
+}ble_client_packet_t;
 
 typedef struct
 {
@@ -77,7 +86,30 @@ typedef struct
     int rssi;
     uint8_t* p_payload;
     uint16_t payload_len;
-}ble_client_packet_t;
+}ble_client_adv_packet_t;
+
+
+typedef struct
+{
+    void (*ble_connected_cb)(void);
+    void (*ble_disconnected_cb)(void);
+}ble_gap_callback_t;
+
+/* 
+ * @brief: Client Characteristic Configuration callback
+ * @param [in] p_data: pointer to data from GATT client
+ * @param [in] p_len: pointer that contain receive length from GATT client
+ * @return: (reserved)
+*/
+typedef void (*ble_gatt_ccc_cb)(void* p_data, void* p_len); /* BLE GATT callbacks custom service*/
+
+typedef struct
+{
+    //When found an advertising packet with appropriate filters, this callback will be called
+    void (*ble_found_adv_packet_cb)(void* p_data, void* p_data_len);
+    ble_gatt_ccc_cb ble_gatt_ccc_cb[PROFILE_NUM_MAX];
+}ble_client_callback_t;
+
 /******************************************************************************
 * Variables
 *******************************************************************************/
@@ -90,7 +122,7 @@ typedef struct
 #ifdef __cplusplus
 extern "C"{
 #endif
-int ble_gatt_client_init();
+int ble_gatt_client_init(ble_client_callback_t* ble_app_cb);
 int ble_gatt_client_start_scan(uint32_t scan_duration_s);
 int ble_gatt_client_stop_scan();
 #ifdef __cplusplus
