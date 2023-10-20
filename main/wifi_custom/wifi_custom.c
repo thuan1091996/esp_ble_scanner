@@ -52,14 +52,14 @@
 #define WIFI_CERT_MAX_LEN               (2048)
 
 
-#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_WARN 
+#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_INFO
 #define WIFI_CONNECTED_BIT 			    BIT0
 
 #define ESPTOUCH_GOT_CREDENTIAL         BIT1
 #define ESPTOUCH_TIMEOUT_MS             (60000) /* In ms */
 
 #define EXAMPLE_ESP_WIFI_SSID           "thuantm5"
-#define EXAMPLE_ESP_WIFI_PASS           "12345678"
+#define EXAMPLE_ESP_WIFI_PASS           "123456789"
 
 /******************************************************************************
 * Module Preprocessor Macros
@@ -233,11 +233,6 @@ int smartconfig_stop()
     return esp_smartconfig_stop();
 }
 
-void wifi_on_connected_cb(void)
-{
-    ESP_LOGW("wifi_custom", "On Wi-Fi connected callback");
-}
-
 void wifi_event_handler(void* event_handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
 	ESP_LOGI("wifi_custom", "Event handler invoked \r\n");
@@ -246,6 +241,10 @@ void wifi_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
 	{
 		ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
 		ESP_LOGI("wifi_custom", "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        if(wifi_station_cb.wifi_sta_connected != NULL)
+        {
+            wifi_station_cb.wifi_sta_connected(NULL, NULL);
+        }
 		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 	}
     /* Handle Wi-Fi event */
@@ -288,9 +287,31 @@ void wifi_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
                 break;
             }
             xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+            if (esp_wifi_disconnect() != 0)
+            {
+                ESP_LOGE("wifi_custom", "Failed to disconnect Wi-Fi");
+            }
+            if (esp_wifi_stop() != ESP_OK)
+            {
+                ESP_LOGE("wifi_custom", "Failed to stop Wi-Fi");
+            }
             if(wifi_station_cb.wifi_sta_disconnected != NULL)
             {
                 wifi_station_cb.wifi_sta_disconnected(NULL, NULL);
+            }
+#if (WIFI_CONF_AUTO_RECONNECT != 0)
+            if (0!= wifi_custom__power_on())
+            {
+                ESP_LOGE("wifi_custom", "Failed to reconnect to Wi-Fi");
+            }
+            else
+            {
+                ESP_LOGI("wifi_custom", "Connected to Wi-Fi");
+            }
+#endif /* End of (WIFI_CONF_AUTO_RECONNECT != 0) */
+            if(wifi_station_cb.wifi_sta_failed != NULL)
+            {
+                wifi_station_cb.wifi_sta_failed(NULL, NULL);
             }
         }
         else
@@ -393,6 +414,14 @@ int wifi_custom_init(wifi_sta_callback_t* station_cb)
         ESP_LOGE("wifi_custom", "Failed to initialize Wi-Fi station");
         return -1;
     }
+
+#if (WIFI_CONFIG_AUTORUN_SMARTCONFIG != 0)
+    if ( 0 != smartconfig_init())
+    {
+        ESP_LOGE("wifi_custom", "Failed to initialize SmartConfig");
+    }
+#endif /* End of (WIFI_CONFIG_AUTORUN_SMARTCONFIG != 0) */
+
     if(station_cb != NULL)
     {
         wifi_station_cb = *station_cb;
@@ -431,22 +460,24 @@ int wifi_custom__power_on(void)
         {
             ESP_LOGI("wifi_custom", "connected to ap SSID:%s password:%s", ssid, password);
         }
-        wifi_on_connected_cb(); // Keep to ensure backward compatible
-        if(wifi_station_cb.wifi_sta_connected != NULL)
-        {
-            wifi_station_cb.wifi_sta_connected(NULL, NULL);
-        }
         return 0;
     }
-    else
-    {
-        ESP_LOGE("wifi_custom", "Timeout to connect");
-        ESP_LOGE("wifi_custom", "Failed to connect to SSID:%s, password:%s", ssid, password);
-        if(wifi_station_cb.wifi_sta_failed != NULL)
+    ESP_LOGE("wifi_custom", "Failed to connect to SSID:%s, password:%s", ssid, password);
+#if (WIFI_CONFIG_AUTORUN_SMARTCONFIG != 0)
+        ESP_LOGE("wifi_custom", "Failed to connect to Wi-Fi. Running ESP SmartConfig...");
+        wifi_custom__power_off();
+        if (smartconfig_start() == 0)
         {
-            wifi_station_cb.wifi_sta_failed(NULL, NULL);
+            ESP_LOGI("wifi_custom", "Obtained Wi-Fi credential with Smartconfig, trying to connect");
+            return wifi_custom__power_on();
         }
-    }
+        else
+        {
+            ESP_LOGE("wifi_custom", "Failed to get Wi-Fi credential with smartconfig after timeout");
+            smartconfig_stop();
+        }
+        smartconfig_stop();
+#endif /* End of (WIFI_CONFIG_AUTORUN_SMARTCONFIG != 0) */
     return -1;
 } 
 //Implements esp_wifi functions to cleanly shutdown the wifi driver. (allows for a future call of wifi_custom_power_on() to work as epxected)

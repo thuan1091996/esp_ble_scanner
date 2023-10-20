@@ -5,8 +5,11 @@
 /******************************************************************************
 * Module Preprocessor Constants
 *******************************************************************************/
-#define WIFI_CONFIG_LOAD_CERT_TO_RAM    (1) /* Set to 1 will load cert to "wifi_cert" when write cert*/
-#define WIFI_CONFIG_LOAD_CREDENTIAL_NVS (1) /* Set to 1 to load Wi-Fi credential from NVS */
+#define WIFI_CONFIG_LOAD_CERT_TO_RAM                (1) /* Set to 1 will load cert to "wifi_cert" when write cert*/
+#define WIFI_CONFIG_LOAD_CREDENTIAL_NVS             (0) /* Set to 1 to load Wi-Fi credential from NVS */
+#define WIFI_CONFIG_AUTORUN_SMARTCONFIG             (0) // 1 - If Wi-Fi is not connected, automatically run SmartConfig
+#define WIFI_CONF_AUTO_RECONNECT                    (1) // If Wi-Fi is disconnected, automatically reconnect
+#define WIFI_CONF_MAX_RETRY                         (3)
 
 /******************************************************************************
 * Typedefs

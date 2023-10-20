@@ -24,8 +24,9 @@
 #define MODULE_NAME                                 "main"
 
 #define APP_CONF_ENABLE_BLE_GATTC                   (1)
+
 #define APP_CONF_WIFI_ENABLE                        (1)
-#define APP_CONF_WIFI_AUTO_RECONNECT                (1) // If Wi-Fi is disconnected, automatically reconnect
+
 #define APP_CONF_ENABLE_MQTT_TASK                   (0)
 #define APP_CONF_ENABLE_MQTT_ACTOR                  (1)
 /******************************************************************************
@@ -120,13 +121,20 @@ int app_wifi_init()
         ESP_LOGE(MODULE_NAME, "Failed to initialize Wi-Fi");
         return -1;
     }
-
-    if ( 0 != smartconfig_init())
-    {
-        ESP_LOGE(MODULE_NAME, "Failed to initialize SmartConfig");
-    }
-
     return 0;
+}
+
+int app_wifi_connect(uint8_t retry_count)
+{
+    for(uint8_t wifi_connect_retry_count=1; wifi_connect_retry_count<=retry_count; wifi_connect_retry_count++)
+    {
+        wifi_custom__power_on();
+        if(wifi_custom__connected() == true)
+            return 0;
+        else
+            ESP_LOGI(MODULE_NAME, "Retry connecting to Wi-Fi (%d/%d)...", wifi_connect_retry_count, retry_count);
+    }
+    return -1;
 }
 
 void app_main(void)
@@ -154,7 +162,7 @@ void app_main(void)
         ESP_LOGE(MODULE_NAME, "Failed to initialize Wi-Fi");
     }
     // Connect to Wi-Fi
-    if (wifi_custom__power_on() != 0)
+    if (0 != app_wifi_connect(WIFI_CONF_MAX_RETRY))
     {
         ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi");
     }
@@ -209,36 +217,4 @@ void app_wifi_disconnected_cb(void* p_data, void* data_len)
     // Post to MQTT actor
     wifi_evt.sig = WIFI_DISCONNECTED;
     Active_post(p_mqtt_actor, (Evt*) &wifi_evt);
-    
-    // #if (APP_CONF_WIFI_AUTO_RECONNECT != 0)
-    #define WIFI_CONNECT_RETRY_COUNT    (3)
-    static uint8_t wifi_connect_retry_count = 0;
-    do 
-    {
-        wifi_custom__power_on();
-        wifi_connect_retry_count++;
-        ESP_LOGI(MODULE_NAME, "Retry connecting to Wi-Fi before run Smartconfig (%d/%d)...", wifi_connect_retry_count, WIFI_CONNECT_RETRY_COUNT);
-    } while( (!wifi_custom__connected() && (wifi_connect_retry_count < WIFI_CONNECT_RETRY_COUNT)) );
-
-    // Check if connected, if still not launch SmartConfig
-    if(wifi_custom__connected() != true)
-    {
-        ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi. Running ESP SmartConfig...");
-        wifi_custom__power_off();
-        if (smartconfig_start() != 0)
-        {
-            ESP_LOGE(MODULE_NAME, "Failed to get Wi-Fi credential with smartconfig after timeout");
-            smartconfig_stop();
-        }
-        else
-        {
-            ESP_LOGI(MODULE_NAME, "Obtained Wi-Fi credential with Smartconfig, trying to connect");
-            wifi_custom__power_on();
-        }
-    }
-    else
-    {
-        wifi_connect_retry_count = 0;
-    }
-    // #endif /* End of (APP_CONF_WIFI_AUTO_RECONNECT != 0) */
 }
