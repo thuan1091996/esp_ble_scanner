@@ -65,7 +65,8 @@ void mqtt_task(void* param);
 int mqtt_actor_init();
 
 int mqtt_update_broker_addr(char* addr);
-int mqtt_connect();
+int mqtt_start();
+int mqtt_stop();
 int mqtt_disconnect();
 
 int mqtt_publish(const char *topic, const char *data, int len, int qos, int retain);

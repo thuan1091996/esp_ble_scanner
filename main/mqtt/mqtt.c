@@ -36,7 +36,7 @@
 * Module Preprocessor Constants
 *******************************************************************************/
 #define MODULE_NAME						                "MQTT_CLIENT:"
-#define MODULE_DEFAULT_LOG_LEVEL						ESP_LOG_WARN
+#define MODULE_DEFAULT_LOG_LEVEL						ESP_LOG_INFO
 
 #define MQTT_LWT_TESTING                				(1)
 #define MQTT_KEEP_ALIVE_PERIOD          				(10)
@@ -210,6 +210,7 @@ static eStatus mqtt_statewait4network(StateMachine_t* const me, const EvtHandle_
 	{
 
 		case ENTRY_SIG:
+			mqtt_stop();
 			ESP_LOGI(MODULE_NAME, "Entry: mqtt_statewait4network");
 			status = STATUS_HANDLE;
 			break;
@@ -239,7 +240,7 @@ static eStatus mqtt_statewait4connection(StateMachine_t* const me, const EvtHand
 			ESP_LOGI(MODULE_NAME, "Entry: mqtt_statewait4connection");
 			for(uint8_t retry=0; retry<3; retry++)
 			{
-				if( mqtt_connect() == 0)
+				if( mqtt_start() == 0)
 					break;
 				else
 				{
@@ -340,9 +341,14 @@ void mqtt_client_init()
 	esp_log_level_set(MODULE_NAME, MODULE_DEFAULT_LOG_LEVEL);
 }
 
-int mqtt_connect()
+int mqtt_start()
 {
 	return esp_mqtt_client_start(mqtt_client_handle);
+}
+
+int mqtt_stop()
+{
+	return esp_mqtt_client_stop(mqtt_client_handle);
 }
 
 int mqtt_disconnect()
