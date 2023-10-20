@@ -42,7 +42,7 @@
  * Module Preprocessor Constants
  *******************************************************************************/
 #define MODULE_NAME                             "BLE_GATTC"
-#define MODULE_DEFAULT_LOG_LEVEL                ESP_LOG_DEBUG
+#define MODULE_DEFAULT_LOG_LEVEL                ESP_LOG_INFO
 
 #define BLE_GATTC_CONF_WHITE_LIST               1
 #define BLE_GATTC_CONF_WHITE_LIST_MAX           4
@@ -395,7 +395,7 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
 void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param)
 {
     esp_ble_gattc_cb_param_t *p_data = (esp_ble_gattc_cb_param_t *)param;
-
+    char addr_str[18] = {0};
     switch (event)
     {
         case ESP_GATTC_REG_EVT:
@@ -408,7 +408,7 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                 .scan_window = BLE_GATTC_SCAN_WINDOW,
                 .scan_duplicate = BLE_SCAN_DUPLICATE_DISABLE
             };
-            ESP_LOGI(MODULE_NAME, "1. Registered app profile -> setting scan params");
+            ESP_LOGD(MODULE_NAME, "1. Registered app profile -> setting scan params");
             esp_err_t scan_ret = esp_ble_gap_set_scan_params(&ble_scan_params);
             if (scan_ret)
             {
@@ -418,19 +418,19 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
 
         case ESP_GATTC_CONNECT_EVT:
         {
-            ESP_LOGI(MODULE_NAME, "8. Connection established");
+            ESP_LOGD(MODULE_NAME, "8. Connection established");
             break;
         }
 
         case ESP_GATTC_OPEN_EVT:
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_OPEN_EVT conn_id %d, if %d, status %d, mtu %d", p_data->open.conn_id, gattc_if, p_data->open.status, p_data->open.mtu);
+            ESP_LOGD(MODULE_NAME, "ESP_GATTC_OPEN_EVT conn_id %d, if %d, status %d, mtu %d", p_data->open.conn_id, gattc_if, p_data->open.status, p_data->open.mtu);
             if (param->open.status != ESP_GATT_OK)
             {
                 ESP_LOGE(MODULE_NAME, "open failed, status %d", p_data->open.status);
                 break;
             }
 
-            ESP_LOGI(MODULE_NAME, "8a. Opening of the connection was done successfully");
+            ESP_LOGD(MODULE_NAME, "8a. Opening of the connection was done successfully");
             // Store connection info into profile table
             if (0 != ble_gattc_profile_set_connection_id(gattc_if, p_data->open.conn_id))
             {
@@ -446,15 +446,14 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
             int src_app_id = ble_gattc_profile_lookup_appid_by_interface(gattc_if);
 
             // Get address string
-            char addr_str[18] = {0};
             // TODO - TMT: Refactor to a function that print profile info
             sprintf(addr_str,"%02X:%02X:%02X:%02X:%02X:%02X", 
                             gl_profile_tab[src_app_id].remote_bda[0], gl_profile_tab[src_app_id].remote_bda[1],
                             gl_profile_tab[src_app_id].remote_bda[2], gl_profile_tab[src_app_id].remote_bda[3],
                             gl_profile_tab[src_app_id].remote_bda[4], gl_profile_tab[src_app_id].remote_bda[5]);
-            ESP_LOGI(MODULE_NAME,"Profile ID: %d, GATTC IF: %d, ConnID: %d, BDA: %s", src_app_id, gattc_if, gl_profile_tab[src_app_id].conn_id, addr_str);
+            ESP_LOGI(MODULE_NAME,"Connected EVT: Profile ID: %d, GATTC IF: %d, ConnID: %d, BDA: %s", src_app_id, gattc_if, gl_profile_tab[src_app_id].conn_id, addr_str);
 
-            ESP_LOGI(MODULE_NAME, "8b. Send configuring MTU");
+            ESP_LOGD(MODULE_NAME, "8b. Send configuring MTU");
             esp_err_t mtu_ret = esp_ble_gattc_send_mtu_req(gattc_if, p_data->connect.conn_id);
             if (mtu_ret)
             {
@@ -479,7 +478,7 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                 break;
             }
 
-            ESP_LOGI(MODULE_NAME, "9. Discover service complete conn_id: %d", param->dis_srvc_cmpl.conn_id);
+            ESP_LOGD(MODULE_NAME, "9. Discover service complete conn_id: %d", param->dis_srvc_cmpl.conn_id);
 
             break;
         case ESP_GATTC_CFG_MTU_EVT:
@@ -487,20 +486,20 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
             {
                 ESP_LOGE(MODULE_NAME, "config mtu failed, error status = %x", param->cfg_mtu.status);
             }
-            ESP_LOGI(MODULE_NAME, "10. Configuring MTU was done successfully");
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_CFG_MTU_EVT, Status %d, MTU %dB, conn_id %d", param->cfg_mtu.status, param->cfg_mtu.mtu, param->cfg_mtu.conn_id);
+            ESP_LOGD(MODULE_NAME, "10. Configuring MTU was done successfully");
+            ESP_LOGD(MODULE_NAME, "ESP_GATTC_CFG_MTU_EVT, Status %d, MTU %dB, conn_id %d", param->cfg_mtu.status, param->cfg_mtu.mtu, param->cfg_mtu.conn_id);
 
-            ESP_LOGI(MODULE_NAME, "11. Start GATT service discovery");
+            ESP_LOGD(MODULE_NAME, "11. Start GATT service discovery");
             esp_ble_gattc_search_service(gattc_if, param->cfg_mtu.conn_id, &remote_filter_service_uuid);
             break;
         case ESP_GATTC_SEARCH_RES_EVT:
         {
-            ESP_LOGI(MODULE_NAME, "12. Found service with conn_id = %d is %s service", p_data->search_res.conn_id, p_data->search_res.is_primary?"primary":"secondary");
-            ESP_LOGI(MODULE_NAME, "Start handle: %d - End handle: %d - Current handle value: %d",  p_data->search_res.start_handle, p_data->search_res.end_handle, 
+            ESP_LOGD(MODULE_NAME, "12. Found service with conn_id = %d is %s service", p_data->search_res.conn_id, p_data->search_res.is_primary?"primary":"secondary");
+            ESP_LOGD(MODULE_NAME, "Start handle: %d - End handle: %d - Current handle value: %d",  p_data->search_res.start_handle, p_data->search_res.end_handle, 
                                                                                             p_data->search_res.srvc_id.inst_id);
             if (p_data->search_res.srvc_id.uuid.len == ESP_UUID_LEN_16 && p_data->search_res.srvc_id.uuid.uuid.uuid16 == remote_filter_service_uuid.uuid.uuid16)
             {
-                ESP_LOGI(MODULE_NAME, "12a. Found service 0x%X on server with connection id: %d ", remote_filter_service_uuid.uuid.uuid16, p_data->search_res.conn_id);
+                ESP_LOGD(MODULE_NAME, "12a. Found service 0x%X on server with connection id: %d ", remote_filter_service_uuid.uuid.uuid16, p_data->search_res.conn_id);
                 if (ble_gattc_profile_set_service_info(gattc_if, p_data->search_res.conn_id , p_data->search_res.start_handle, p_data->search_res.end_handle) != 0)
                 {
                     ESP_LOGE(MODULE_NAME, "Failed to set service info");
@@ -514,8 +513,8 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                 ESP_LOGE(MODULE_NAME, "13. ESP_GATTC_SEARCH_CMPL_EVT failed, error status = %x", p_data->search_cmpl.status);
                 break;
             }
-            ESP_LOGI(MODULE_NAME, "13a. ESP_GATTC_SEARCH_CMPL_EVT - service discovery sucessfully");
-            ESP_LOGI(MODULE_NAME, "13b. Start finding char handle for char with UUID 0x%X in conn_id %x", remote_filter_char_uuid.uuid.uuid16, p_data->search_cmpl.conn_id);
+            ESP_LOGD(MODULE_NAME, "13a. ESP_GATTC_SEARCH_CMPL_EVT - service discovery sucessfully");
+            ESP_LOGD(MODULE_NAME, "13b. Start finding char handle for char with UUID 0x%X in conn_id %x", remote_filter_char_uuid.uuid.uuid16, p_data->search_cmpl.conn_id);
             uint16_t char_handle = 0;
             int status =  ble_gattc_profile_find_char_handle(gattc_if, p_data->search_cmpl.conn_id, remote_filter_char_uuid, &char_handle);
             if (status != 0)
@@ -523,14 +522,14 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                 ESP_LOGE(MODULE_NAME, "ble_gattc_profile_find_char_handle() error");
                 break;
             }
-            ESP_LOGI(MODULE_NAME, "13b. Found char handle %d", char_handle);
+            ESP_LOGD(MODULE_NAME, "13b. Found char handle %d", char_handle);
             // Update char handle in profile table
             if (0 != ble_gattc_profile_set_char_handle(gattc_if, p_data->search_cmpl.conn_id, char_handle))
             {
                 ESP_LOGE(MODULE_NAME, "Failed to set char handle");
                 break;
             }
-            ESP_LOGI(MODULE_NAME, "13c. Try to register for notification");
+            ESP_LOGD(MODULE_NAME, "13c. Try to register for notification");
             
             // Get address corresponding to gattc_if and conn_id
             esp_bd_addr_t target_addr = {0};
@@ -551,7 +550,7 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                 ESP_LOGE(MODULE_NAME, "ESP_GATTC_REG_FOR_NOTIFY_EVT failed: error status = %d", p_data->reg_for_notify.status);
                 break;
             }
-            ESP_LOGI(MODULE_NAME, "14. Register for notify with char handle %d success, start writing to CCC descriptor", p_data->reg_for_notify.handle);
+            ESP_LOGD(MODULE_NAME, "14. Register for notify with char handle %d success, start writing to CCC descriptor", p_data->reg_for_notify.handle);
 
             // Get connection ID base on gattc_if
             int connection_id = ble_gattc_profile_get_connect_id(gattc_if);
@@ -570,7 +569,7 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                 ESP_LOGE(MODULE_NAME, "ble_gattc_profile_find_char_descr_handle() failed with err %d", status);
                 break;
             }
-            ESP_LOGI(MODULE_NAME, "14a. Found descriptor handle %d for char UUID 0x%X", char_description_handle, remote_filter_char_uuid.uuid.uuid16);
+            ESP_LOGD(MODULE_NAME, "14a. Found descriptor handle %d for char UUID 0x%X", char_description_handle, remote_filter_char_uuid.uuid.uuid16);
             // Update descriptor handle in profile table
             status = ble_gattc_profile_set_char_descr_handle(gattc_if, connection_id, char_description_handle);
             if( status != 0)
@@ -595,7 +594,7 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                 ESP_LOGE(MODULE_NAME, "ESP_GATTC_WRITE_DESCR_EVT for handle %d failed, error status = %x", p_data->write.handle, p_data->write.status);
                 break;
             }
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_WRITE_DESCR_EVT for handle %d success", p_data->write.handle);
+            ESP_LOGD(MODULE_NAME, "ESP_GATTC_WRITE_DESCR_EVT for handle %d success", p_data->write.handle);
             break;
         
         case ESP_GATTC_WRITE_CHAR_EVT:
@@ -604,12 +603,12 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                 ESP_LOGE(MODULE_NAME, "ESP_GATTC_WRITE_CHAR_EVT for handle %d failed, error status = %x", p_data->write.handle, p_data->write.status);
                 break;
             }
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_WRITE_CHAR_EVT for handle %d success", p_data->write.handle);
+            ESP_LOGD(MODULE_NAME, "ESP_GATTC_WRITE_CHAR_EVT for handle %d success", p_data->write.handle);
             break;
 
 
         case ESP_GATTC_NOTIFY_EVT:
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_NOTIFY_EVT, connection ID %d, char handle %d, evt: %s", 
+            ESP_LOGD(MODULE_NAME, "ESP_GATTC_NOTIFY_EVT, connection ID %d, char handle %d, evt: %s", 
                                     p_data->notify.conn_id, p_data->notify.handle, p_data->notify.is_notify?"notify":"indicate");
             // esp_log_buffer_hex(MODULE_NAME, p_data->notify.value, p_data->notify.value_len);
             on_gatt_ccc_changed_cb(gattc_if, p_data->notify.conn_id, p_data->notify.handle,
@@ -635,13 +634,17 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
         {
             esp_bd_addr_t bda;
             memcpy(bda, p_data->srvc_chg.remote_bda, sizeof(esp_bd_addr_t));
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_SRVC_CHG_EVT, bd_addr:");
+            ESP_LOGD(MODULE_NAME, "ESP_GATTC_SRVC_CHG_EVT, bd_addr:");
             esp_log_buffer_hex(MODULE_NAME, bda, sizeof(esp_bd_addr_t));
             break;
         }
 
         case ESP_GATTC_DISCONNECT_EVT:
-            ESP_LOGI(MODULE_NAME, "ESP_GATTC_DISCONNECT_EVT, reason = %d", p_data->disconnect.reason);
+            sprintf(addr_str,"%02X:%02X:%02X:%02X:%02X:%02X", 
+                            p_data->disconnect.remote_bda[0], p_data->disconnect.remote_bda[1],
+                            p_data->disconnect.remote_bda[2], p_data->disconnect.remote_bda[3],
+                            p_data->disconnect.remote_bda[4], p_data->disconnect.remote_bda[5]);
+            ESP_LOGW(MODULE_NAME, "Disconnected EVT (%d): GATTC IF: %d, ConnID: %d, BDA: %s", p_data->disconnect.reason, gattc_if, p_data->disconnect.conn_id, addr_str);
             if(BLE_CONF_AUTO_RESCAN != 0)
             {
                 ble_gatt_client_start_scan(BLE_GATTC_SCAN_DURATION);
@@ -658,7 +661,7 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
     switch (event)
     {
         case ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT:
-            ESP_LOGI(MODULE_NAME, "2. Finish set scan parameters, start scan");
+            ESP_LOGD(MODULE_NAME, "2. Finish set scan parameters, start scan");
             break;
 
         case ESP_GAP_BLE_SCAN_START_COMPLETE_EVT:
@@ -669,7 +672,7 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
             }
             else
             {
-                ESP_LOGI(MODULE_NAME, "3. Scan started successfully");
+                ESP_LOGD(MODULE_NAME, "3. Scan started successfully");
             }
             break;
 
@@ -691,8 +694,8 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                         {
                             ESP_LOGE(MODULE_NAME, "Failed to stop scanning");
                         }
-                        ESP_LOGI(MODULE_NAME, "6. Sucessfully stop scanning to connect to the device");
-                        ESP_LOGI(MODULE_NAME, "7. Tries to open a connection to the device");
+                        ESP_LOGD(MODULE_NAME, "6. Sucessfully stop scanning to connect to the device");
+                        ESP_LOGD(MODULE_NAME, "7. Tries to open a connection to the device");
                         int current_profile_id = ble_gattc_profile_get_current_app_id();
                         esp_ble_gattc_open(gl_profile_tab[current_profile_id].gattc_if, scan_result->scan_rst.bda, scan_result->scan_rst.ble_addr_type, true);
                         #if 0
@@ -719,7 +722,7 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                 case ESP_GAP_SEARCH_INQ_CMPL_EVT:
                     if(BLE_CONF_AUTO_RESCAN != 0)
                     {
-                        ESP_LOGI(MODULE_NAME, "4.1. Scan complete, restart scanning");
+                        ESP_LOGD(MODULE_NAME, "4.1. Scan complete, restart scanning");
                         ble_gatt_client_start_scan(BLE_GATTC_SCAN_DURATION);
                     }
                     break;
@@ -735,7 +738,7 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                 ESP_LOGE(MODULE_NAME, "scan stop failed, error status = %x", param->scan_stop_cmpl.status);
                 break;
             }
-            ESP_LOGI(MODULE_NAME, "stop scan successfully");
+            ESP_LOGD(MODULE_NAME, "stop scan successfully");
             break;
 
         case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
@@ -744,11 +747,11 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                 ESP_LOGE(MODULE_NAME, "adv stop failed, error status = %x", param->adv_stop_cmpl.status);
                 break;
             }
-            ESP_LOGI(MODULE_NAME, "stop adv successfully");
+            ESP_LOGD(MODULE_NAME, "stop adv successfully");
             break;
 
         case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
-            ESP_LOGI(MODULE_NAME, "update connection params status = %d, min_int = %d, max_int = %d,conn_int = %d,latency = %d, timeout = %d",
+            ESP_LOGD(MODULE_NAME, "update connection params status = %d, min_int = %d, max_int = %d,conn_int = %d,latency = %d, timeout = %d",
                     param->update_conn_params.status,
                     param->update_conn_params.min_int,
                     param->update_conn_params.max_int,
@@ -772,7 +775,7 @@ void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_ga
     if (event == ESP_GATTC_REG_EVT)
     {
         // TODO - TMT: Update while-list
-        // ESP_LOGI("BLE_CUSTOM", "UPDATING WHITELIST");
+        // ESP_LOGD("BLE_CUSTOM", "UPDATING WHITELIST");
         // esp_ble_gap_update_whitelist(true, whitelist_addr, BLE_WL_ADDR_TYPE_RANDOM);
 
         if (param->reg.status == ESP_GATT_OK)
@@ -785,7 +788,7 @@ void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_ga
         }
         else
         {
-            ESP_LOGI(MODULE_NAME, "reg app failed, app_id %d, status %d", param->reg.app_id, param->reg.status);
+            ESP_LOGD(MODULE_NAME, "ESP_GATTC_REG_EVT, app_id %d, status %d", param->reg.app_id, param->reg.status);
             return;
         }
     }

@@ -80,7 +80,7 @@ void mqtt_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
 	switch (p_evt->event_id)
 	{
 		case MQTT_EVENT_CONNECTED:
-			ESP_LOGI(MODULE_NAME, "MQTT_EVENT_CONNECTED");
+			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_CONNECTED");
 			#if (MQTT_TESTING != 0)
 			xTaskNotify(xMQTT_handler, MQTT_CLIENT_EVENT_CONNECTED, eSetBits);
 			#else /* !(MQTT_TESTING != 0) */
@@ -91,7 +91,7 @@ void mqtt_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
 			break;
 
 		case MQTT_EVENT_DISCONNECTED:
-			ESP_LOGI(MODULE_NAME, "MQTT_EVENT_DISCONNECTED");
+			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_DISCONNECTED");
 			#if (MQTT_TESTING != 0)
 			xTaskNotify(xMQTT_handler, MQTT_CLIENT_EVENT_DISCONNECT, eSetValueWithOverwrite);
 			#else /* !(MQTT_TESTING != 0) */
@@ -101,42 +101,42 @@ void mqtt_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
 			break;
 			
 		case MQTT_EVENT_SUBSCRIBED:
-			ESP_LOGI(MODULE_NAME, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", p_evt->msg_id);
+			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", p_evt->msg_id);
 			break;
 
 		case MQTT_EVENT_UNSUBSCRIBED:
-			ESP_LOGI(MODULE_NAME, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", p_evt->msg_id);
+			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", p_evt->msg_id);
 			break;
 
 		case MQTT_EVENT_PUBLISHED:
-			ESP_LOGI(MODULE_NAME, "MQTT_EVENT_PUBLISHED, msg_id=%d", p_evt->msg_id);
+			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_PUBLISHED, msg_id=%d", p_evt->msg_id);
 			#if (MQTT_TESTING != 0)
 			xTaskNotify(xMQTT_handler, MQTT_CLIENT_EVENT_PUBLISHED, eSetValueWithOverwrite);
 			#endif /* End of (MQTT_TESTING != 0) */
 			break;
 
 		case MQTT_EVENT_DATA:
-			ESP_LOGI(MODULE_NAME, "MQTT_EVENT_DATA");
-			ESP_LOGI(MODULE_NAME,"TOPIC=%.*s\r\n", p_evt->topic_len, p_evt->topic);
-			ESP_LOGI(MODULE_NAME,"DATA=%.*s\r\n", p_evt->data_len, p_evt->data);
+			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_DATA");
+			ESP_LOGD(MODULE_NAME,"TOPIC=%.*s\r\n", p_evt->topic_len, p_evt->topic);
+			ESP_LOGD(MODULE_NAME,"DATA=%.*s\r\n", p_evt->data_len, p_evt->data);
 			#if (MQTT_TESTING != 0)
 			xTaskNotify(xMQTT_handler, MQTT_CLIENT_EVENT_ONDATA, eSetValueWithOverwrite);
 			#endif /* End of (MQTT_TESTING != 0) */
 			break;
 
 		case MQTT_EVENT_ERROR:
-			ESP_LOGI(MODULE_NAME, "MQTT_EVENT_ERROR");
+			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_ERROR");
        		if (p_evt->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) 
 			{
 				ESP_LOGE(MODULE_NAME,"reported from esp-tls : %s", esp_err_to_name(p_evt->error_handle->esp_tls_last_esp_err));
 				ESP_LOGE(MODULE_NAME,"reported from tls stack : %s", esp_err_to_name(p_evt->error_handle->esp_tls_stack_err));
 				ESP_LOGE(MODULE_NAME,"captured as transport's socket errno : %s",  esp_err_to_name(p_evt->error_handle->esp_transport_sock_errno));
-				ESP_LOGI(MODULE_NAME, "Last errno string (%s)", strerror(p_evt->error_handle->esp_transport_sock_errno));
+				ESP_LOGE(MODULE_NAME, "Last errno string (%s)", strerror(p_evt->error_handle->esp_transport_sock_errno));
 			}
 			break;
 
 		default:
-			ESP_LOGI(MODULE_NAME, "Other p_evt id:%d", p_evt->event_id);
+			ESP_LOGD(MODULE_NAME, "Other p_evt id:%d", p_evt->event_id);
 			break;
 	}
 }
@@ -205,7 +205,7 @@ static eStatus mqtt_state_active(StateMachine_t* const me, const EvtHandle_t p_e
 static eStatus mqtt_statewait4network(StateMachine_t* const me, const EvtHandle_t p_event)
 {
 	eStatus status = STATUS_IGNORE;
-	ESP_LOGI(MODULE_NAME, "State: mqtt_statewait4network");
+	ESP_LOGD(MODULE_NAME, "State: mqtt_statewait4network");
 	switch (p_event->sig)
 	{
 
@@ -233,7 +233,7 @@ static eStatus mqtt_statewait4network(StateMachine_t* const me, const EvtHandle_
 static eStatus mqtt_statewait4connection(StateMachine_t* const me, const EvtHandle_t p_event)
 {
 	eStatus status = STATUS_IGNORE;
-	ESP_LOGI(MODULE_NAME, "State: mqtt_statewait4connection");
+	ESP_LOGD(MODULE_NAME, "State: mqtt_statewait4connection");
 	switch (p_event->sig)
 	{
 		case ENTRY_SIG:
@@ -271,16 +271,15 @@ static eStatus mqtt_statewait4connection(StateMachine_t* const me, const EvtHand
 static eStatus mqtt_state_active(StateMachine_t* const me, const EvtHandle_t p_event)
 {
 	eStatus status = STATUS_IGNORE;
-	ESP_LOGI(MODULE_NAME, "State: mqtt_state_active");
+	ESP_LOGD(MODULE_NAME, "State: mqtt_state_active");
 	switch (p_event->sig)
 	{
 		case ENTRY_SIG:
+			ESP_LOGI(MODULE_NAME, "Entry: mqtt_state_active");
 			if( mqtt_publish(MQTT_DEFAULT_STATUS_TOPIC, "on", strlen("on"), 2, 1) != 0)
 			{
 				ESP_LOGE(MODULE_NAME, "Failed to publish MQTT status");
 			}
-
-			ESP_LOGI(MODULE_NAME, "Entry: mqtt_state_active");
 			break;
 
 		case EXIT_SIG:
@@ -297,6 +296,7 @@ static eStatus mqtt_state_active(StateMachine_t* const me, const EvtHandle_t p_e
 
 		case SENSOR_DATA_READY:
 			sensor_data_evt_t* p_data = (sensor_data_evt_t*)p_event;
+			ESP_LOGI(MODULE_NAME, "Publishing data:");
 			if( mqtt_publish(MQTT_DEFAULT_DATA_TOPIC, p_data->sensor_data_json, strlen(p_data->sensor_data_json), 1, 0) != 0)
 			{
 				ESP_LOGE(MODULE_NAME, "Failed to publish MQTT data");

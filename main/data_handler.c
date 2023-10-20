@@ -28,7 +28,7 @@
 * Module Preprocessor Macros
 *******************************************************************************/
 #define MODULE_NAME                     "data_handler"
-#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_WARN
+#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_INFO
 /******************************************************************************
 * Module Typedefs
 *******************************************************************************/
@@ -73,7 +73,7 @@ void data_handling_task(void* param)
             }
             else
             {
-                ESP_LOGI(MODULE_NAME, "JSON: %s", str_json);
+                ESP_LOGD(MODULE_NAME, "JSON: %s", str_json);
                 sensor_data_evt_t* p_e = (sensor_data_evt_t*)Event_New(SENSOR_DATA_READY, sizeof(sensor_data_evt_t));
                 if(p_e == NULL)
                 {
@@ -85,7 +85,7 @@ void data_handling_task(void* param)
                     Active_post(p_mqtt_actor, (Evt*)p_e);
                 }
             }
-            ESP_LOGW(MODULE_NAME, "FCNT: %ld", recv_data.sensor_payload.fcnt);
+            ESP_LOGI(MODULE_NAME, "Received FCNT: %ld", recv_data.sensor_payload.fcnt);
 #if (SENSOR_DATA_CONF_DUMP_RAW != 0 )
             ESP_LOGI(MODULE_NAME, "Received data from sensor");
             ESP_LOGI(MODULE_NAME, "Device addr: %02X:%02X:%02X:%02X:%02X:%02X", 
@@ -133,7 +133,7 @@ int sensor_data_sending(uint8_t* data, uint16_t len)
     }
     // Sending data to queue
     ble_sensor_data_packet_t* p_sensor_data_packet = (ble_sensor_data_packet_t*)data;
-    ESP_LOGD(MODULE_NAME, "Sending frame: %ld", (long)p_sensor_data_packet->sensor_payload.fcnt);
+    ESP_LOGI(MODULE_NAME, "Sending frame: %ld", (long)p_sensor_data_packet->sensor_payload.fcnt);
     if(xQueueSend(sensor_data_queue, p_sensor_data_packet, portMAX_DELAY) != pdTRUE)
     {
         ESP_LOGE(MODULE_NAME, "Send data to queue failed");
