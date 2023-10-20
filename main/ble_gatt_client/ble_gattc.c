@@ -50,6 +50,8 @@
 
 #define REMOTE_SERVICE_UUID                     0xFF00
 #define REMOTE_NOTIFY_CHAR_UUID                 0xFF01
+
+#define TARGET_DEVICE_NAME_PATTERN              "IMU"
 /******************************************************************************
  * Module Preprocessor Macros
  *******************************************************************************/
@@ -125,6 +127,8 @@ static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM_MAX] = {
 static ble_client_callback_t ble_client_callback = {0};
 
 static int g_current_app_id = PROFILE_A_APP_ID;
+
+
 static esp_bt_uuid_t remote_filter_service_uuid = {
     .len = ESP_UUID_LEN_16,
     .uuid = {.uuid16 = REMOTE_SERVICE_UUID,},
@@ -679,7 +683,7 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
                     uint8_t adv_payload_len;
                     uint8_t* p_adv_payload = esp_ble_resolve_adv_data(scan_result->scan_rst.ble_adv, ESP_BLE_AD_TYPE_NAME_CMPL, &adv_payload_len);
                     // if ( (p_adv_payload != NULL) && (NULL != strstr((const char*)p_adv_payload, "IMU")) )
-                    if ( (p_adv_payload != NULL) && (NULL != strstr((const char*)p_adv_payload, "XIAO")) )
+                    if ( (p_adv_payload != NULL) && (NULL != strstr((const char*)p_adv_payload, TARGET_DEVICE_NAME_PATTERN)) )
                     {   //5. Find the interested device to connect if required (based on adv name for example)
                         
                         //6. Stop the scan process
