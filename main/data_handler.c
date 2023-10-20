@@ -49,7 +49,7 @@ TaskHandle_t xdata_handler=NULL;
 void data_handling_task(void* param)
 {
     // Create data msg queue
-    sensor_data_queue = xQueueCreate(10, sizeof(sensor_data_packet_t));
+    sensor_data_queue = xQueueCreate(DATA_QUEUE_MAX_LEN, sizeof(ble_sensor_data_packet_t));
     if (sensor_data_queue == NULL)
     {
         ESP_LOGE(MODULE_NAME, "Create data msg queue failed");
@@ -59,7 +59,7 @@ void data_handling_task(void* param)
     char str_json[SENSOR_DATA_JSON_MAX_LEN];
     while(1)
     {
-        sensor_data_packet_t recv_data = {0};
+        ble_sensor_data_packet_t recv_data = {0};
         if(xQueueReceive(sensor_data_queue, &recv_data, portMAX_DELAY) != pdTRUE)
         {
             ESP_LOGE(MODULE_NAME, "Receive data from queue failed");
@@ -109,27 +109,20 @@ void data_handling_task(void* param)
  * @param data (in): pointer to data buffer
  * @param len (in): length of data buffer
  * @return int: 0 if success, -1 if failed
- * @note: format of raw sensor data:
- * + Device address - 6B
- * + SENSOR_PAYLOAD_DATA_HEADER - 1B - 0xAA
- * + Sensor data  - sizeof(sensor_data_t)
  */
 int sensor_data_sending(uint8_t* data, uint16_t len)
 {
+    // Dumpp data 
+    ESP_LOG_BUFFER_HEXDUMP(MODULE_NAME, data, len, ESP_LOG_DEBUG);
     // Validate data format
     if(data == NULL)
     {
         ESP_LOGE(MODULE_NAME, "Invalid data");
         return -1;
     }
-    if(len != sizeof(sensor_data_t) + 7)
+    if(len != sizeof(ble_sensor_data_packet_t))
     {
-        // ESP_LOGE(MODULE_NAME, "Invalid data length");
-        return -1;
-    }
-    if(data[6] != SENSOR_DATA_HEADER)
-    {
-        // ESP_LOGE(MODULE_NAME, "Invalid data header");
+        ESP_LOGE(MODULE_NAME, "Invalid data length");
         return -1;
     }
 
@@ -139,11 +132,9 @@ int sensor_data_sending(uint8_t* data, uint16_t len)
         return -1;
     }
     // Sending data to queue
-    sensor_data_packet_t sensor_data_packet = {0};
-    memcpy(sensor_data_packet.device_addr, data, 6);
-    memcpy(&sensor_data_packet.sensor_payload, data + 7, sizeof(sensor_data_t));
-    // Dump 
-    if(xQueueSend(sensor_data_queue, &sensor_data_packet, portMAX_DELAY) != pdTRUE)
+    ble_sensor_data_packet_t* p_sensor_data_packet = (ble_sensor_data_packet_t*)data;
+    ESP_LOGD(MODULE_NAME, "Sending frame: %ld", (long)p_sensor_data_packet->sensor_payload.fcnt);
+    if(xQueueSend(sensor_data_queue, p_sensor_data_packet, portMAX_DELAY) != pdTRUE)
     {
         ESP_LOGE(MODULE_NAME, "Send data to queue failed");
         return -1;
@@ -172,7 +163,7 @@ int sensor_data_sending(uint8_t* data, uint16_t len)
  *               }
  *          }
  */
-int sensor_data_format_json(sensor_data_packet_t* sensor_data_packet, char* json_str, uint16_t json_str_max_len)
+int sensor_data_format_json(ble_sensor_data_packet_t* sensor_data_packet, char* json_str, uint16_t json_str_max_len)
 {
     int status = 0 ;
     cJSON *root = NULL;
