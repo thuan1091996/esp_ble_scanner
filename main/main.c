@@ -23,6 +23,11 @@
 *******************************************************************************/
 #define MODULE_NAME                                 "main"
 
+#define FW_MAJOR_VERSION                            (0)
+#define FW_MINOR_VERSION                            (0)
+#define FW_BUIILD_VERSION                           (1)
+
+
 #define APP_CONF_ENABLE_BLE_GATTC                   (1)
 
 #define APP_CONF_WIFI_ENABLE                        (1)
@@ -139,6 +144,9 @@ int app_wifi_connect(uint8_t retry_count)
 
 void app_main(void)
 {
+    ESP_LOGI(MODULE_NAME, "=============== BLE scanner ===============")
+    ESP_LOGI(MODULE_NAME, "Firmware version: %d.%d.%d", FW_MAJOR_VERSION, FW_MINOR_VERSION, FW_BUIILD_VERSION);
+    ESP_LOGI(MODULE_NAME, "===========================================")
     nvs_init();
 	Framework_Init();
 
