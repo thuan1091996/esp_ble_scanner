@@ -103,12 +103,6 @@ int app_ble_client_init()
         return FAILURE;
     }
     
-    if (ble_gatt_client_start_scan(BLE_GATTC_SCAN_DURATION) != SUCCESS)
-    {
-        ESP_LOGE(MODULE_NAME, "Failed to start BLE GATTC scan");
-        return FAILURE;
-    }
-
     return SUCCESS;
 }
 

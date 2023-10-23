@@ -67,6 +67,8 @@ enum app_signal
     GATT_DEVICE_SUBSCRIBED,
     GATT_DEVICE_UNSUBSCRIBED,
     GATT_DEVICE_DATA_AVAILABLE,
+    GATT_SCAN_FOUND_DEVICE,         // Scan found device
+    GATT_SCAN_TIMEOUT,              // Scan duration timeout   
 	/* .... */
 	MAX_SIG
 };
