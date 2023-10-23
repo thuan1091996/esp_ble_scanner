@@ -61,6 +61,12 @@ enum app_signal
     /* Data event */
     SENSOR_DATA_READY,
 
+    /* GATT device events */
+    GATT_DEVICE_CONNECTED,
+    GATT_DEVICE_DISCONNECTED,
+    GATT_DEVICE_SUBSCRIBED,
+    GATT_DEVICE_UNSUBSCRIBED,
+    GATT_DEVICE_DATA_AVAILABLE,
 	/* .... */
 	MAX_SIG
 };

@@ -44,7 +44,7 @@
 #define BLE_MTU_CONFIG_SIZE                     (200)
 #define BLE_ADDR_LEN                            (6)
 
-#define BLE_CONF_AUTO_RESCAN                    (1) // 1-> automatically rescan after scan duration timeout or disconnect
+#define BLE_CONF_AUTO_RESCAN                    (0) // 1-> automatically rescan after scan duration timeout or disconnect
 
 /******************************************************************************
 * Macros

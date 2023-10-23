@@ -144,9 +144,9 @@ int app_wifi_connect(uint8_t retry_count)
 
 void app_main(void)
 {
-    ESP_LOGI(MODULE_NAME, "=============== BLE scanner ===============")
+    ESP_LOGI(MODULE_NAME, "=============== BLE scanner ===============");
     ESP_LOGI(MODULE_NAME, "Firmware version: %d.%d.%d", FW_MAJOR_VERSION, FW_MINOR_VERSION, FW_BUIILD_VERSION);
-    ESP_LOGI(MODULE_NAME, "===========================================")
+    ESP_LOGI(MODULE_NAME, "===========================================");
     nvs_init();
 	Framework_Init();
 

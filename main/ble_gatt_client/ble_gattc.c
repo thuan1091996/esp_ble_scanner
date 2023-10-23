@@ -22,6 +22,7 @@
 /******************************************************************************
  * Includes
  *******************************************************************************/
+#include "assert.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -38,6 +39,48 @@
 #include "ble_gattc.h"
 #include "task_common.h"
 
+#define BLE_ACTOR_TEST                          (1)
+#if (BLE_ACTOR_TEST != 0)
+#include "freertos/FreeRTOS.h"
+#include "../task_common.h"
+#include "mqtt.h"
+
+#define GATT_DEVICE_ACTOR_QUEUE_LEN             (10)
+#define GATT_DEVICE_ACTOR_TASK_PRIORITY         (tskIDLE_PRIORITY + 2)
+#define GATT_DEVICE_ACTOR_TASK_STACK_SIZE       (1024*3)
+#define GATT_DEVICE_ACTOR_TEST_ID               (0)
+typedef struct
+{
+    Active super;
+    uint8_t device_id;             
+}gattc_device_actor_t;
+
+gattc_device_actor_t gattc_device_actor[PROFILE_NUM_MAX] = {0};
+ActiveId_t p_gattc_actor[PROFILE_NUM_MAX] = {0};
+
+gattc_device_actor_t* ble_gattc_get_actor(uint8_t device_id);
+int ble_gatt_client_actor_init(uint8_t device_id);
+
+
+static const Evt gatt_device_connect_evt = {
+        .sig = GATT_DEVICE_CONNECTED,
+};
+
+static const Evt gatt_device_disconnect_evt = {
+        .sig = GATT_DEVICE_DISCONNECTED,
+};
+
+static const Evt gatt_device_subscribe_evt = {
+        .sig = GATT_DEVICE_SUBSCRIBED,
+};
+
+static const Evt gatt_device_unsubscribe_evt = {
+        .sig = GATT_DEVICE_UNSUBSCRIBED,
+};
+
+#endif /* End of (BLE_ACTOR_TEST != 0) */
+
+
 /******************************************************************************
  * Module Preprocessor Constants
  *******************************************************************************/
@@ -52,6 +95,8 @@
 #define REMOTE_NOTIFY_CHAR_UUID                 0xFF01
 
 #define TARGET_DEVICE_NAME_PATTERN              "IMU"
+
+
 /******************************************************************************
  * Module Preprocessor Macros
  *******************************************************************************/
@@ -162,6 +207,22 @@ int ble_gattc_profile_set_current_app_id(int app_id)
     }
     g_current_app_id = app_id;
     return 0;
+}
+
+void ble_gattc_profile_clear(int app_id)
+{
+    if( app_id <0 || app_id >= PROFILE_NUM_MAX)
+    {
+        ESP_LOGE(MODULE_NAME, "%d is an invalid app_id", app_id);
+        return;
+    }
+    gl_profile_tab[app_id].gattc_if = ESP_GATT_IF_NONE;
+    gl_profile_tab[app_id].service_start_handle = BLE_GATTC_ATT_INVALID_HANDLE;
+    gl_profile_tab[app_id].service_end_handle = BLE_GATTC_ATT_INVALID_HANDLE;
+    gl_profile_tab[app_id].char_handle = BLE_GATTC_ATT_INVALID_HANDLE;
+    gl_profile_tab[app_id].descr_handle = BLE_GATTC_ATT_INVALID_HANDLE;
+    gl_profile_tab[app_id].conn_id = 0;
+    memset(gl_profile_tab[app_id].remote_bda, 0, sizeof(esp_bd_addr_t));
 }
 
 int ble_gattc_profile_lookup_appid_by_interface(esp_gatt_if_t gattc_if)
@@ -339,6 +400,12 @@ int ble_gattc_profile_set_char_descr_handle(esp_gatt_if_t gattc_if,  uint16_t co
     assert(app_id >= 0);
     assert(gl_profile_tab[app_id].conn_id == connect_id);
     gl_profile_tab[app_id].descr_handle = descr_handle;
+
+#if (BLE_ACTOR_TEST != 0)
+    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(GATT_DEVICE_ACTOR_TEST_ID);
+    assert(p_gattc_device_actor != NULL);
+    Active_post((Active*)p_gattc_device_actor, &gatt_device_connect_evt);
+#endif /* End of (BLE_ACTOR_TEST != 0) */
     return 0;
 }
 
@@ -373,6 +440,23 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
         ESP_LOGE(MODULE_NAME, "Invalid char handle");
         return -1;
     }
+
+#if (BLE_ACTOR_TEST != 0)
+    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(GATT_DEVICE_ACTOR_TEST_ID);
+    assert(p_gattc_device_actor != NULL);
+    if ( (evt_type == BT_GATT_CCC_INDICATE) || (BT_GATT_CCC_NOTIFY) )
+    {
+        Active_post((Active*)p_gattc_device_actor, &gatt_device_subscribe_evt);
+        
+
+    }
+    else if (evt_type == BT_GATT_CCC_DISABLE)
+    {
+        Active_post((Active*)p_gattc_device_actor, &gatt_device_unsubscribe_evt);
+        
+    }
+#endif /* End of (BLE_ACTOR_TEST != 0) */
+
     if(gl_profile_tab[app_id].char_ccc_changed_cb == NULL)
     {
         ESP_LOGE(MODULE_NAME, "Invalid Char CCC changed callback");
@@ -645,6 +729,13 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                             p_data->disconnect.remote_bda[2], p_data->disconnect.remote_bda[3],
                             p_data->disconnect.remote_bda[4], p_data->disconnect.remote_bda[5]);
             ESP_LOGW(MODULE_NAME, "Disconnected EVT (%d): GATTC IF: %d, ConnID: %d, BDA: %s", p_data->disconnect.reason, gattc_if, p_data->disconnect.conn_id, addr_str);
+            
+#if (BLE_ACTOR_TEST != 0)
+            gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(GATT_DEVICE_ACTOR_TEST_ID);
+            assert(p_gattc_device_actor != NULL);
+            Active_post((Active*)p_gattc_device_actor, &gatt_device_disconnect_evt);
+#endif /* End of (BLE_ACTOR_TEST != 0) */
+
             if(BLE_CONF_AUTO_RESCAN != 0)
             {
                 ble_gatt_client_start_scan(BLE_GATTC_SCAN_DURATION);
@@ -831,20 +922,17 @@ int ble_gatt_client_init(ble_client_callback_t* ble_app_cb)
     {
         ble_client_callback = *ble_app_cb;
     }
+
+#if (BLE_ACTOR_TEST != 0)
+    ble_gatt_client_actor_init(GATT_DEVICE_ACTOR_TEST_ID);
+#endif /* End of (BLE_ACTOR_TEST != 0) */
+
     // Initialize the profile table with NULL values
     for(uint8_t idx=0; idx < PROFILE_NUM_MAX; idx++)
     {
-        gl_profile_tab[idx].gattc_if = ESP_GATT_IF_NONE;
-        gl_profile_tab[idx].service_start_handle = BLE_GATTC_ATT_INVALID_HANDLE;
-        gl_profile_tab[idx].service_end_handle = BLE_GATTC_ATT_INVALID_HANDLE;
-        gl_profile_tab[idx].char_handle = BLE_GATTC_ATT_INVALID_HANDLE;
-        gl_profile_tab[idx].descr_handle = BLE_GATTC_ATT_INVALID_HANDLE;
-        gl_profile_tab[idx].conn_id = 0;
+        ble_gattc_profile_clear(idx);
         gl_profile_tab[idx].char_ccc_changed_cb = ble_client_callback.ble_gatt_ccc_cb[idx];
-        memset(gl_profile_tab[idx].remote_bda, 0, sizeof(esp_bd_addr_t));
-
     }
-
 
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     ret = esp_bt_controller_init(&bt_cfg);
@@ -929,6 +1017,123 @@ int ble_gatt_client_stop_scan()
     if(status != 0)
     {
         ESP_LOGE(MODULE_NAME, "Failed to stop scan with err %d", status);
+    }
+    return status;
+}
+
+
+////////////////////////////////////// ========= BLE ACTOR ========= /////////////////////////////////////////////////
+gattc_device_actor_t* ble_gattc_get_actor(uint8_t device_id)
+{
+    return &gattc_device_actor[device_id];
+}
+
+// States
+static eStatus gattc_device_state_reset(StateMachine_t* const me, const EvtHandle_t p_event);
+static eStatus gattc_device_state_connected(StateMachine_t* const me, const EvtHandle_t p_event);
+static eStatus gattc_device_state_subscribed(StateMachine_t* const me, const EvtHandle_t p_event);
+
+int ble_gatt_client_actor_init(uint8_t device_id)
+{
+    // Active_Init((Active*)&mqtt_actor, &gattc_device_state_reset, MQTT_TASK_PRIORITY, MQTT_TASK_STACK_SIZE, (void*)0, (void*)0, MQTT_ACTOR_QUEUE_LEN);
+	// p_mqtt_actor = &mqtt_actor;
+    gattc_device_actor->device_id = device_id;
+    Active_Init(&gattc_device_actor[device_id].super, &gattc_device_state_reset, GATT_DEVICE_ACTOR_TASK_PRIORITY, GATT_DEVICE_ACTOR_TASK_STACK_SIZE, (void*)NULL, (void*)NULL, GATT_DEVICE_ACTOR_QUEUE_LEN);
+    p_gattc_actor[device_id] = &gattc_device_actor[device_id].super;
+    return 0;
+}
+
+static eStatus gattc_device_state_reset(StateMachine_t* const me, const EvtHandle_t p_event)
+{
+	eStatus status = STATUS_IGNORE;
+	ESP_LOGD(MODULE_NAME, "State: gattc_device_state_reset");
+	switch (p_event->sig)
+	{
+
+		case ENTRY_SIG:
+			ESP_LOGI(MODULE_NAME, "Entry: gattc_device_state_reset");
+            ble_gattc_profile_clear(((gattc_device_actor_t*)me)->device_id);
+			status = STATUS_HANDLE;
+			break;
+
+		case EXIT_SIG:
+			ESP_LOGI(MODULE_NAME, "Exit: gattc_device_state_reset");
+			status = STATUS_HANDLE;
+			break;
+        
+        case GATT_DEVICE_CONNECTED:
+            ESP_LOGI(MODULE_NAME, "Event: GATT_DEVICE_CONNECTED");
+            status = TRANSITION(gattc_device_state_connected);
+            break;
+
+		default:
+			break;
+	}
+	return status;
+}
+
+static eStatus gattc_device_state_connected(StateMachine_t* const me, const EvtHandle_t p_event)
+{
+    eStatus status = STATUS_IGNORE;
+    ESP_LOGD(MODULE_NAME, "State: gattc_device_state_connected");
+    switch (p_event->sig)
+    {
+
+        case ENTRY_SIG:
+            ESP_LOGI(MODULE_NAME, "Entry: gattc_device_state_connected");
+            status = STATUS_HANDLE;
+            break;
+
+        case EXIT_SIG:
+            ESP_LOGI(MODULE_NAME, "Exit: gattc_device_state_connected");
+            status = STATUS_HANDLE;
+            break;
+        
+        case GATT_DEVICE_SUBSCRIBED:
+            ESP_LOGI(MODULE_NAME, "Event: GATT_DEVICE_SUBSCRIBED");
+            status = TRANSITION(gattc_device_state_subscribed);
+            break;
+
+        case GATT_DEVICE_DISCONNECTED:
+            ESP_LOGI(MODULE_NAME, "Event: GATT_DEVICE_DISCONNECTED");
+            status = TRANSITION(gattc_device_state_reset);
+            break;
+
+        default:
+            break;
+    }
+    return status;
+}
+
+static eStatus gattc_device_state_subscribed(StateMachine_t* const me, const EvtHandle_t p_event)
+{
+    eStatus status = STATUS_IGNORE;
+    ESP_LOGD(MODULE_NAME, "State: gattc_device_state_subscribed");
+    switch (p_event->sig)
+    {
+
+        case ENTRY_SIG:
+            ESP_LOGI(MODULE_NAME, "Entry: gattc_device_state_subscribed");
+            status = STATUS_HANDLE;
+            break;
+
+        case EXIT_SIG:
+            ESP_LOGI(MODULE_NAME, "Exit: gattc_device_state_subscribed");
+            status = STATUS_HANDLE;
+            break;
+        
+        case GATT_DEVICE_DISCONNECTED:
+            ESP_LOGI(MODULE_NAME, "Event: GATT_DEVICE_DISCONNECTED");
+            status = TRANSITION(gattc_device_state_reset);
+            break;
+
+        case GATT_DEVICE_UNSUBSCRIBED:
+            ESP_LOGI(MODULE_NAME, "Event: GATT_DEVICE_UNSUBSCRIBED");
+            status = TRANSITION(gattc_device_state_connected);
+            break;
+
+        default:
+            break;
     }
     return status;
 }
