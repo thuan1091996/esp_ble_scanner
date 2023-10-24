@@ -161,28 +161,28 @@ typedef struct
 // GATT data structure
 struct gattc_profile_inst
 {
-    esp_gattc_cb_t gattc_cb;        // ✔ set
+    esp_gattc_cb_t gattc_cb;        // Fixed during initialization
     // Info related to specific connection
-    uint16_t gattc_if;              // <-> Relate directly to profile ID // ✔ set
-    uint16_t conn_id;               // <-> Relate to virtual connection with server // ✔ set
-    esp_bd_addr_t remote_bda;       // <-> Relate to virtual connection with server // ✔ set
+    uint16_t gattc_if;              // Linked directly to profile ID after register profile
+    uint16_t conn_id;               // <-> Relate to virtual connection with server
+    esp_bd_addr_t remote_bda;       // <-> Relate to virtual connection with server
     
     // Info related to specific service definition
-    uint16_t service_start_handle;  // ✔ set
-    uint16_t service_end_handle;    // ✔ set
+    uint16_t service_start_handle; 
+    uint16_t service_end_handle;   
     // Info related to specific characteristic definition
-    uint16_t char_handle;           // ✔ set
-    uint16_t descr_handle;          // ✔ set
+    uint16_t char_handle;          
+    uint16_t descr_handle;         
     // Nofication/Indication callback
-    ble_gatt_ccc_cb char_ccc_changed_cb;    // ✔ set
+    ble_gatt_ccc_cb char_ccc_changed_cb;   
 };
 
 /******************************************************************************
- * Function Prototypes
+ * Static Function Prototypes
  *******************************************************************************/
-void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param);
-void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
-void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param);
+static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param);
+static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param);
+static void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param);
 
 
 // Test functions
@@ -229,8 +229,6 @@ static esp_bt_uuid_t notify_descr_uuid = {
 /******************************************************************************
  * Profile Specific Function Definitions
  *******************************************************************************/
-
-/* APP ID */
 int ble_gattc_profile_get_current_app_id(void)
 {
     return g_current_app_id;
@@ -494,6 +492,10 @@ int ble_gatt_profile_set_ccc_descriptor_value(esp_gatt_if_t gattc_if,  uint16_t 
     return 0;
 }
 
+/******************************************************************************
+ * BLE GATT CLIENT CALLBACKS
+ *******************************************************************************/
+
 int on_gattc_scan_timeout()
 {
     ESP_LOGI(MODULE_NAME, "on_gattc_scan_timeout");
@@ -600,8 +602,10 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
 }
 
 
-
-void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param)
+/******************************************************************************
+ * Static Function Definitions
+ *******************************************************************************/
+static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param)
 {
     esp_ble_gattc_cb_param_t *p_data = (esp_ble_gattc_cb_param_t *)param;
     char addr_str[18] = {0};
@@ -883,7 +887,7 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
 }
 
 // GAP callback function - search BT connections
-void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
+static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
     switch (event)
     {
@@ -995,13 +999,13 @@ void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 // esp_gattc_cb_event_t - GATT Client callback function events
 // esp_gatt_if_t - GATT interface type
 // esp_ble_gattc_cb_param_t - GATT client callback parameters union
-void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param)
+static void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param)
 {
     /* If event is register event, store the gattc_if for each profile */
     if (event == ESP_GATTC_REG_EVT)
     {
         // TODO - TMT: Update while-list
-        // ESP_LOGD("BLE_CUSTOM", "UPDATING WHITELIST");
+        // ESP_LOGI("BLE_CUSTOM", "UPDATING WHITELIST");
         // esp_ble_gap_update_whitelist(true, whitelist_addr, BLE_WL_ADDR_TYPE_RANDOM);
 
         if (param->reg.status == ESP_GATT_OK)
@@ -1052,6 +1056,9 @@ void esp_gattc_cb(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_ga
     }
 }
 
+/******************************************************************************
+ * Function Definitions
+ *******************************************************************************/
 int ble_gatt_client_init(ble_client_callback_t* ble_app_cb)
 {
     int ret;
@@ -1164,8 +1171,9 @@ int ble_gatt_client_stop_scan()
     return status;
 }
 
-
-////////////////////////////////////// ========= BLE ACTOR ========= /////////////////////////////////////////////////
+/******************************************************************************
+ * BLE ACTORS
+ *******************************************************************************/
 gattc_device_actor_t* ble_gattc_get_actor(uint8_t device_id)
 {
     return &gattc_device_actor[device_id];
