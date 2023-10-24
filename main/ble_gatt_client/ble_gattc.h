@@ -105,6 +105,7 @@ typedef void (*ble_gatt_ccc_cb)(void* p_data, void* p_len); /* BLE GATT callback
 
 typedef struct
 {
+    ble_gap_callback_t ble_gap_cb;
     //When found an advertising packet with appropriate filters, this callback will be called
     void (*ble_found_adv_packet_cb)(void* p_data, void* p_data_len);
     ble_gatt_ccc_cb ble_gatt_ccc_cb[PROFILE_NUM_MAX];

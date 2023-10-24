@@ -521,6 +521,38 @@ int on_gattc_found_device(ble_client_adv_packet_t *p_adv_packet, uint16_t adv_pa
     return 0;
 }
 
+int on_gattc_device_connected(esp_gatt_if_t gattc_if, uint16_t connect_id, esp_bd_addr_t server_addr)
+{
+    ESP_LOGI(MODULE_NAME, "on_gattc_device_connected");
+    int app_id = ble_gattc_profile_lookup_appid_by_interface(gattc_if);
+    assert(app_id >= 0);
+    assert(gl_profile_tab[app_id].conn_id == connect_id);
+    if(ble_client_callback.ble_gap_cb.ble_connected_cb != NULL)
+    {
+        ble_client_callback.ble_gap_cb.ble_connected_cb();
+    }
+    return 0;
+}
+
+int on_gattc_device_disconnected(esp_gatt_if_t gattc_if, uint16_t connect_id, esp_bd_addr_t server_addr)
+{
+    ESP_LOGI(MODULE_NAME, "on_gattc_device_disconnected");
+    int app_id = ble_gattc_profile_lookup_appid_by_interface(gattc_if);
+    assert(app_id >= 0);
+    assert(gl_profile_tab[app_id].conn_id == connect_id);
+    if(ble_client_callback.ble_gap_cb.ble_disconnected_cb != NULL)
+    {
+        ble_client_callback.ble_gap_cb.ble_disconnected_cb();
+    }
+#if (BLE_ACTOR_TEST != 0)
+    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(app_id);
+    assert(p_gattc_device_actor != NULL);
+    Active_post((Active*)p_gattc_device_actor, &gatt_device_disconnect_evt);
+#endif /* End of (BLE_ACTOR_TEST != 0) */
+
+    return 0;
+}
+
 int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_t descr_handle, 
                             gatt_char_evt_type_value evt_type, uint8_t* p_data, uint16_t data_len)
 {
@@ -622,10 +654,15 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
             }
 
             ESP_LOGI(MODULE_NAME, "8b. Send configuring MTU");
-            esp_err_t mtu_ret = esp_ble_gattc_send_mtu_req(gattc_if, p_data->connect.conn_id);
+            esp_err_t mtu_ret = esp_ble_gattc_send_mtu_req(gattc_if, p_data->open.conn_id);
             if (mtu_ret)
             {
                 ESP_LOGE(MODULE_NAME, "config MTU error, error code = %x", mtu_ret);
+            }
+
+            if (0 != on_gattc_device_connected(gattc_if, p_data->open.conn_id, p_data->open.remote_bda))
+            {
+                ESP_LOGE(MODULE_NAME, "on_gattc_device_connected() failed");
             }
 
             #if (BLE_CONF_UPDATE_CONN_PARAM != 0)
@@ -818,12 +855,10 @@ void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc
                     p_data->disconnect.remote_bda[2], p_data->close.remote_bda[3],
                     p_data->disconnect.remote_bda[4], p_data->close.remote_bda[5]);
             ESP_LOGW(MODULE_NAME, "ESP_GATTC_CLOSE_EVT (%d): GATTC IF: %d, ConnID: %d, BDA: %s", p_data->close.reason, gattc_if, p_data->close.conn_id, addr_str);
-#if (BLE_ACTOR_TEST != 0)
-            gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(GATT_DEVICE_ACTOR_TEST_ID);
-            assert(p_gattc_device_actor != NULL);
-            Active_post((Active*)p_gattc_device_actor, &gatt_device_disconnect_evt);
-            Active_post((Active*)p_gattc_manger, &gatt_device_disconnect_evt);
-#endif /* End of (BLE_ACTOR_TEST != 0) */
+            if (0 != on_gattc_device_disconnected(gattc_if, p_data->close.conn_id, p_data->close.remote_bda))
+            {
+                ESP_LOGE(MODULE_NAME, "on_gattc_device_disconnected() Failed");
+            }
             break;
 
 
