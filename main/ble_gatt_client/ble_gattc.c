@@ -54,7 +54,6 @@
 #define GATT_DEVICE_ACTOR_QUEUE_LEN                     (10)
 #define GATT_DEVICE_ACTOR_TASK_PRIORITY                 (tskIDLE_PRIORITY + 1)
 #define GATT_DEVICE_ACTOR_TASK_STACK_SIZE               (1024*3)
-#define GATT_DEVICE_ACTOR_TEST_ID                       (0)
 typedef struct
 {
     Active super;
@@ -464,10 +463,9 @@ int ble_gattc_profile_set_char_descr_handle(esp_gatt_if_t gattc_if,  uint16_t co
     gl_profile_tab[app_id].descr_handle = descr_handle;
 
 #if (BLE_ACTOR_TEST != 0)
-    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(GATT_DEVICE_ACTOR_TEST_ID);
+    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(app_id);
     assert(p_gattc_device_actor != NULL);
     Active_post((Active*)p_gattc_device_actor, &gatt_device_connect_evt);
-    Active_post((Active*)p_gattc_manger, &gatt_device_connect_evt);
 #endif /* End of (BLE_ACTOR_TEST != 0) */
     return 0;
 }
@@ -568,21 +566,6 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
         return -1;
     }
 
-#if (BLE_ACTOR_TEST != 0)
-    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(GATT_DEVICE_ACTOR_TEST_ID);
-    assert(p_gattc_device_actor != NULL);
-    if ( (evt_type == BT_GATT_CCC_INDICATE) || (BT_GATT_CCC_NOTIFY) )
-    {
-        Active_post((Active*)p_gattc_device_actor, &gatt_device_subscribe_evt);
-        Active_post((Active*)p_gattc_manger, &gatt_device_subscribe_evt);
-
-    }
-    else if (evt_type == BT_GATT_CCC_DISABLE)
-    {
-        Active_post((Active*)p_gattc_device_actor, &gatt_device_unsubscribe_evt);
-        Active_post((Active*)p_gattc_manger, &gatt_device_unsubscribe_evt);
-    }
-#endif /* End of (BLE_ACTOR_TEST != 0) */
 
     if(gl_profile_tab[app_id].char_ccc_changed_cb == NULL)
     {
@@ -598,6 +581,18 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
     ble_client_packet.p_payload = p_data;
     ble_client_packet.payload_len = data_len;
     gl_profile_tab[app_id].char_ccc_changed_cb(&ble_client_packet, &ble_client_packet_len);
+#if (BLE_ACTOR_TEST != 0)
+    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(app_id);
+    assert(p_gattc_device_actor != NULL);
+    if ( (evt_type == BT_GATT_CCC_INDICATE) || (BT_GATT_CCC_NOTIFY) )
+    {
+        Active_post((Active*)p_gattc_device_actor, &gatt_device_subscribe_evt);
+    }
+    else if (evt_type == BT_GATT_CCC_DISABLE)
+    {
+        Active_post((Active*)p_gattc_device_actor, &gatt_device_unsubscribe_evt);
+    }
+#endif /* End of (BLE_ACTOR_TEST != 0) */
     return 0;
 }
 
@@ -1223,6 +1218,7 @@ static eStatus gattc_device_state_reset(StateMachine_t* const me, const EvtHandl
 		case ENTRY_SIG:
 			ESP_LOGI(MODULE_NAME, "Entry: gattc_device_state_reset");
             ble_gattc_profile_clear(((gattc_device_actor_t*)me)->device_id);
+            Active_post((Active*)p_gattc_manger, &gatt_device_disconnect_evt);
 			status = STATUS_HANDLE;
 			break;
 
@@ -1251,6 +1247,7 @@ static eStatus gattc_device_state_connected(StateMachine_t* const me, const EvtH
 
         case ENTRY_SIG:
             ESP_LOGI(MODULE_NAME, "Entry: gattc_device_state_connected");
+            Active_post((Active*)p_gattc_manger, &gatt_device_connect_evt);
             status = STATUS_HANDLE;
             break;
 
@@ -1284,11 +1281,13 @@ static eStatus gattc_device_state_subscribed(StateMachine_t* const me, const Evt
 
         case ENTRY_SIG:
             ESP_LOGI(MODULE_NAME, "Entry: gattc_device_state_subscribed");
+            Active_post((Active*)p_gattc_manger, &gatt_device_subscribe_evt);
             status = STATUS_HANDLE;
             break;
 
         case EXIT_SIG:
             ESP_LOGI(MODULE_NAME, "Exit: gattc_device_state_subscribed");
+            Active_post((Active*)p_gattc_manger, &gatt_device_unsubscribe_evt);
             status = STATUS_HANDLE;
             break;
         
