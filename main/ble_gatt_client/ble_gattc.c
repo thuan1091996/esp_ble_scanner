@@ -49,6 +49,7 @@
 #define GATT_DEVICE_MANAGER_ACTOR_QUEUE_LEN             (10)
 #define GATT_DEVICE_MANAGER_ACTOR_TASK_PRIORITY         (tskIDLE_PRIORITY + 1)
 #define GATT_DEVICE_MANAGER_ACTOR_TASK_STACK_SIZE       (1024*4)
+#define GATT_DEVICE_MANAGER_CONNECT_TIMEOUT_S           (pdMS_TO_TICKS(15 * 1000)) // 15s
 
 // GATT device actor
 #define GATT_DEVICE_ACTOR_QUEUE_LEN                     (10)
@@ -75,6 +76,9 @@ ActiveId_t p_gattc_manger = NULL;
 
 gattc_device_actor_t gattc_device_actor[PROFILE_NUM_MAX] = {0};
 ActiveId_t p_gattc_actor[PROFILE_NUM_MAX] = {0};
+
+static TimerHandle_t gattc_timer = NULL;
+static const Evt timer_timeout_evt = {.sig = GATT_TIMER_TIMEOUT};
 
 gattc_device_actor_t* ble_gattc_get_actor(uint8_t device_id);
 int ble_gatt_device_manager_init();
@@ -1185,11 +1189,37 @@ static eStatus gattc_device_state_reset(StateMachine_t* const me, const EvtHandl
 static eStatus gattc_device_state_connected(StateMachine_t* const me, const EvtHandle_t p_event);
 static eStatus gattc_device_state_subscribed(StateMachine_t* const me, const EvtHandle_t p_event);
 
+static void connect_timeout_callback(TimerHandle_t timer_handler)
+{
+	Active_post(p_gattc_manger, &timer_timeout_evt);
+}
+
+static int ble_gatt_device_manager_timer_init()
+{
+	gattc_timer = xTimerCreate("Connecting Timeout Timer",
+                                pdMS_TO_TICKS(GATT_DEVICE_MANAGER_CONNECT_TIMEOUT_S),
+                                1, /* Auto reload */
+                                (void*)0,
+                                connect_timeout_callback);
+	if(gattc_timer == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Failed to create timer");
+        return -1;
+    }
+    return 0;
+}
+
 int ble_gatt_device_manager_init()
 {
     Active_Init(&ble_gattc_manager.super, &gattc_manager_state_scanning, GATT_DEVICE_MANAGER_ACTOR_TASK_PRIORITY, GATT_DEVICE_MANAGER_ACTOR_TASK_STACK_SIZE, (void*)NULL, (void*)NULL, GATT_DEVICE_MANAGER_ACTOR_QUEUE_LEN);
     p_gattc_manger = &ble_gattc_manager.super;
     ble_gattc_manager.device_max = PROFILE_NUM_MAX;
+    // Init timer
+    if (0 != ble_gatt_device_manager_timer_init())
+    {
+        ESP_LOGE(MODULE_NAME, "ble_gatt_device_manager_timer_init() failed");
+    }
+    // Init device actors
     for(uint8_t idx=0; idx < ble_gattc_manager.device_max; idx++)
     {
         if (ble_gatt_client_actor_init(idx) != 0)
@@ -1363,23 +1393,30 @@ static eStatus gattc_manager_state_discovering(StateMachine_t* const me, const E
     {
 
         case ENTRY_SIG:
-            ESP_LOGI(MODULE_NAME, "Entry: gattc_manager_state_discovering");
+            ESP_LOGI(MODULE_NAME, "Entry: gattc_manager_state_connecting");
+            // TODO - TMT: open connection, start timer for connection timeout
+            if (pdPASS != xTimerStart(gattc_timer, portMAX_DELAY))
+			{
+				ESP_LOGE(MODULE_NAME, "Failed to start connecting timeout timer");
+			}
             status = STATUS_HANDLE;
             break;
 
         case EXIT_SIG:
-            ESP_LOGI(MODULE_NAME, "Exit: gattc_manager_state_discovering");
+            ESP_LOGI(MODULE_NAME, "Exit: gattc_manager_state_connecting");
+            // TODO - TMT: stop timer for connection timeout
+            if (pdPASS != xTimerStop(gattc_timer, portMAX_DELAY))
+			{
+				ESP_LOGE(MODULE_NAME, "Failed to stop connecting timeout timer");
+			}
             status = STATUS_HANDLE;
             break;
-            
-        case GATT_DEVICE_DISCONNECTED:
-            ESP_LOGI(MODULE_NAME, "Event: GATT_DEVICE_DISCONNECTED");
-            p_gattc_manager->device_connected--;
-            // TODO - TMT: Find the disconnected one and try to scan again with that app_id
-            ESP_LOGI(MODULE_NAME, "Connected devices: (%d/%d)", p_gattc_manager->device_connected, p_gattc_manager->device_max);
+        
+        case GATT_TIMER_TIMEOUT:
+            ESP_LOGI(MODULE_NAME, "Event: GATT_TIMER_TIMEOUT");
             status = TRANSITION(gattc_manager_state_scanning);
             break;
-
+            
         case GATT_DEVICE_CONNECTED:
             ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_DEVICE_CONNECTED");
             p_gattc_manager->device_connected++;
