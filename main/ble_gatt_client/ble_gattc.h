@@ -33,6 +33,8 @@
 * Preprocessor Constants
 *******************************************************************************/
 #define BLE_GATTC_ATT_INVALID_HANDLE            (0xFFFF)
+#define BLE_GATTC_ATT_INVALID_CONN_ID           (0xFFFF)
+#define BLE_GATTC_ATT_INVALID_ADDR_TYPE         (0xFF)
 /******************************************************************************
 * Configuration Constants
 *******************************************************************************/

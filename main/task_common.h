@@ -87,11 +87,18 @@ typedef struct
     TaskHandle_t * const TaskHandle;            /*< Pointer to task handle       */
 }TaskInitParams_t;
 
+// Actor event types
 typedef struct
 {
     Evt super;
     char* sensor_data_json;
 }sensor_data_evt_t;
+
+typedef struct
+{
+    Evt super;
+    uint8_t dev_id;
+}gatt_device_evt_t;
 
 /******************************************************************************
 * Variables
