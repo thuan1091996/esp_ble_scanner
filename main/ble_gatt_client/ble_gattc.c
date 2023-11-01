@@ -130,7 +130,6 @@ gatt_device_evt_t* ble_gattc_new_evt(uint16_t evt_sig);
 
 #endif /* End of (BLE_ACTOR_TEST != 0) */
 
-x
 /******************************************************************************
  * Module Preprocessor Constants
  *******************************************************************************/
@@ -398,7 +397,7 @@ int ble_gattc_profile_get_server_addr(esp_gatt_if_t gattc_if, uint16_t connect_i
 {
     int app_id = ble_gattc_profile_lookup_appid_by_interface(gattc_if);
     assert(app_id >= 0);
-    assert(addr_type != NULL)
+    // assert(NULL != addr_type);
     assert(gl_profile_tab[app_id].conn_id == connect_id);
     memcpy(server_addr, gl_profile_tab[app_id].remote_bda, sizeof(esp_bd_addr_t));
     *addr_type = gl_profile_tab[app_id].remote_addr_type;
@@ -1348,7 +1347,7 @@ static eStatus gattc_device_state_connected(StateMachine_t* const me, const EvtH
 
         case ENTRY_SIG:
             ESP_LOGI(MODULE_NAME, "Device[%d] - Entry: gattc_device_state_connected", p_gatt_device->device_id);
-            Active_post((Active*)p_gattc_manger, &gatt_dev  ice_connect_evt);
+            Active_post((Active*)p_gattc_manger, &gatt_device_connect_evt);
             status = STATUS_HANDLE;
             break;
 
