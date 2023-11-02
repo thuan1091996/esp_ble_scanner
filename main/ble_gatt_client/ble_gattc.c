@@ -49,7 +49,8 @@
 #define GATT_DEVICE_MANAGER_ACTOR_QUEUE_LEN             (10)
 #define GATT_DEVICE_MANAGER_ACTOR_TASK_PRIORITY         (tskIDLE_PRIORITY + 1)
 #define GATT_DEVICE_MANAGER_ACTOR_TASK_STACK_SIZE       (1024*4)
-#define GATT_DEVICE_MANAGER_CONNECT_TIMEOUT_S           (pdMS_TO_TICKS(60 * 1000)) // 60s
+#define GATT_DEVICE_MANAGER_CONNECT_TIMEOUT             (pdMS_TO_TICKS(60 * 1000)) // 60s
+#define GATT_DEVICE_MANAGER_SUBSCRIBE_TIMEOUT           (pdMS_TO_TICKS(1 * 1000)) // 1s
 
 // GATT device actor
 #define GATT_DEVICE_ACTOR_QUEUE_LEN                     (10)
@@ -616,6 +617,44 @@ int on_gattc_device_disconnected(esp_gatt_if_t gattc_if, uint16_t connect_id, es
     ESP_LOGE(MODULE_NAME, " Posted event to actor[%d]", app_id);
     Active_post((Active*)p_gattc_device_actor, &gatt_device_disconnect_evt);
 #endif /* End of (BLE_ACTOR_TEST != 0) */
+    return 0;
+}
+
+int on_gatt_server_initiated_update_sucess(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_t descr_handle,
+                                            uint8_t* p_data, uint16_t data_len)
+{
+    ESP_LOGI(MODULE_NAME, "on_gatt_server_initiated_update_sucess");
+    // Get appID based on gattc_if
+    int app_id = ble_gattc_profile_lookup_appid_by_interface(gattc_if);
+    assert(app_id >= 0);
+    assert(gl_profile_tab[app_id].conn_id == connect_id);
+    
+    if(gl_profile_tab[app_id].descr_handle != descr_handle)
+    {
+        ESP_LOGE(MODULE_NAME, "%d different from gl_profile_tab[%d].descr_handle: %d", gl_profile_tab[app_id].descr_handle, app_id, descr_handle);
+        return -1;
+    }
+
+    if(data_len != sizeof(uint16_t))
+    {
+        ESP_LOGW(MODULE_NAME, "%d different from sizeof(uint16_t): %d", data_len, sizeof(uint16_t));
+    }
+    uint16_t ccc_value = *((uint16_t*)p_data);
+
+#if (BLE_ACTOR_TEST != 0)
+    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(app_id);
+    assert(p_gattc_device_actor != NULL);
+    if ( (ccc_value == BT_GATT_CCC_INDICATE) || (BT_GATT_CCC_NOTIFY) )
+    {
+        ESP_LOGD(MODULE_NAME, "on_gatt_server_initiated_update_sucess: Subscribed for %s", (ccc_value == BT_GATT_CCC_INDICATE)?"indication":"notification");
+        Active_post((Active*)p_gattc_device_actor, &gatt_device_subscribe_evt);
+    }
+    else if (ccc_value == BT_GATT_CCC_DISABLE)
+    {
+        ESP_LOGD(MODULE_NAME, "on_gatt_server_initiated_update_sucess: BT_GATT_CCC_DISABLE");
+        Active_post((Active*)p_gattc_device_actor, &gatt_device_unsubscribe_evt);
+    }
+#endif /* End of (BLE_ACTOR_TEST != 0) */
 
     return 0;
 }
@@ -648,18 +687,6 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
     ble_client_packet.p_payload = p_data;
     ble_client_packet.payload_len = data_len;
     gl_profile_tab[app_id].char_ccc_changed_cb(&ble_client_packet, &ble_client_packet_len);
-#if (BLE_ACTOR_TEST != 0)
-    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(app_id);
-    assert(p_gattc_device_actor != NULL);
-    if ( (evt_type == BT_GATT_CCC_INDICATE) || (BT_GATT_CCC_NOTIFY) )
-    {
-        Active_post((Active*)p_gattc_device_actor, &gatt_device_subscribe_evt);
-    }
-    else if (evt_type == BT_GATT_CCC_DISABLE)
-    {
-        Active_post((Active*)p_gattc_device_actor, &gatt_device_unsubscribe_evt);
-    }
-#endif /* End of (BLE_ACTOR_TEST != 0) */
     return 0;
 }
 
@@ -861,9 +888,31 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
                 ESP_LOGE(MODULE_NAME, "ESP_GATTC_WRITE_DESCR_EVT for handle %d failed, error status = %x", p_data->write.handle, p_data->write.status);
                 break;
             }
+            else
+            {
+                // Read descriptor to see if subscribe or unsubscribe 
+                if (ESP_OK != esp_ble_gattc_read_char_descr(gattc_if, p_data->write.conn_id, p_data->write.handle, ESP_GATT_AUTH_REQ_NONE))
+                {
+                    ESP_LOGE(MODULE_NAME, "esp_ble_gattc_read_char_descr() for handle %d on conn_id %d failed", p_data->write.handle, p_data->write.conn_id);
+                }
+            }
             ESP_LOGD(MODULE_NAME, "ESP_GATTC_WRITE_DESCR_EVT for handle %d success", p_data->write.handle);
             break;
         
+        case ESP_GATTC_READ_DESCR_EVT:
+            if (p_data->read.status != ESP_GATT_OK)
+            {
+                ESP_LOGE(MODULE_NAME, "ESP_GATTC_READ_DESCR_EVT for handle %d failed on conn_id %d, error status = %x", p_data->read.handle, p_data->read.conn_id, p_data->read.status);
+                break;
+            }
+            // Send notification update to actor
+            if (0 != on_gatt_server_initiated_update_sucess(gattc_if, p_data->read.conn_id, p_data->read.handle,
+                                                            p_data->read.value, p_data->read.value_len) )
+            {
+                ESP_LOGE(MODULE_NAME, "on_gatt_server_initiated_update_sucess() failed");
+            }
+            break;
+
         case ESP_GATTC_WRITE_CHAR_EVT:
             if (p_data->write.status != ESP_GATT_OK)
             {
@@ -1265,7 +1314,7 @@ static void connect_timeout_callback(TimerHandle_t timer_handler)
 static int ble_gatt_device_manager_timer_init()
 {
 	gattc_timer = xTimerCreate("Connecting Timeout Timer",
-                                pdMS_TO_TICKS(GATT_DEVICE_MANAGER_CONNECT_TIMEOUT_S),
+                                pdMS_TO_TICKS(GATT_DEVICE_MANAGER_CONNECT_TIMEOUT),
                                 1, /* Auto reload */
                                 (void*)0,
                                 connect_timeout_callback);
@@ -1281,7 +1330,7 @@ int ble_gatt_device_manager_init()
 {
     Active_Init(&ble_gattc_manager.super, &gattc_manager_state_scanning, GATT_DEVICE_MANAGER_ACTOR_TASK_PRIORITY, GATT_DEVICE_MANAGER_ACTOR_TASK_STACK_SIZE, (void*)NULL, (void*)NULL, GATT_DEVICE_MANAGER_ACTOR_QUEUE_LEN);
     p_gattc_manger = &ble_gattc_manager.super;
-    ble_gattc_manager.device_max = PROFILE_NUM_MAX;
+    ble_gattc_manager.device_max = BLE_NUMBER_TARGET_DEVICE;
     // Init timer
     if (0 != ble_gatt_device_manager_timer_init())
     {
@@ -1457,6 +1506,28 @@ int gattc_manager_disconnect_handler(gattc_device_manager_actor_t* p_dev_manger)
     return 0;
 }
 
+void gattc_manager_subscribing(gattc_device_manager_actor_t* p_dev_manger)
+{
+    ESP_LOGI(MODULE_NAME, "on gattc_manager_subscribing()");
+    for(uint8_t idx=0; idx < p_dev_manger->device_max; idx++)
+    {
+        // TODO - TMT: Double check
+        gattc_device_actor_t* p_gatt_device = ble_gattc_get_actor(idx);
+        if (p_gatt_device->super.sm.statehandler == (StateHandler) gattc_device_state_connected)
+        {
+            // Subscribe for indication
+            if (0!= ble_gatt_profile_set_ccc_descriptor_value(gl_profile_tab[idx].gattc_if, gl_profile_tab[idx].conn_id, gl_profile_tab[idx].descr_handle, BT_GATT_CCC_INDICATE))
+            {
+                ESP_LOGE(MODULE_NAME, "ble_gatt_profile_set_ccc_descriptor_value() with idx %d failed", idx);
+            }
+            else
+            {
+                ESP_LOGI(MODULE_NAME, "ble_gatt_profile_set_ccc_descriptor_value() with idx %d success", idx);
+            }
+        }
+    }
+}
+
 static eStatus gattc_manager_state_scanning(StateMachine_t* const me, const EvtHandle_t p_event)
 {
     eStatus status = STATUS_IGNORE;
@@ -1547,7 +1618,12 @@ static eStatus gattc_manager_state_connecting(StateMachine_t* const me, const Ev
 
         case ENTRY_SIG:
             ESP_LOGI(MODULE_NAME, "Entry: gattc_manager_state_connecting");
-            //start timer for connection timeout
+            // Change timeout timer period to connecting timeout
+            if (pdPASS != xTimerChangePeriod(gattc_timer, GATT_DEVICE_MANAGER_CONNECT_TIMEOUT, 1000))
+            {
+                ESP_LOGE(MODULE_NAME, "Failed to change timeout timer to connecting timeout");
+            }
+            // Start timer for connection timeout
             if (pdPASS != xTimerStart(gattc_timer, portMAX_DELAY))
 			{
 				ESP_LOGE(MODULE_NAME, "Failed to start connecting timeout timer");
@@ -1557,7 +1633,6 @@ static eStatus gattc_manager_state_connecting(StateMachine_t* const me, const Ev
 
         case EXIT_SIG:
             ESP_LOGI(MODULE_NAME, "Exit: gattc_manager_state_connecting");
-            // TODO - TMT: stop timer for connection timeout
             if (pdPASS != xTimerStop(gattc_timer, portMAX_DELAY))
 			{
 				ESP_LOGE(MODULE_NAME, "Failed to stop connecting timeout timer");
@@ -1619,12 +1694,44 @@ static eStatus gattc_manager_state_connected(StateMachine_t* const me, const Evt
                     ble_gattc_profile_print_app_info(idx);
                 }
             }
+            // Change timeout timer period to subscribed timeout
+            if (pdPASS != xTimerChangePeriod(gattc_timer, GATT_DEVICE_MANAGER_SUBSCRIBE_TIMEOUT, 1000))
+            {
+                ESP_LOGE(MODULE_NAME, "Failed to change timeout timer to connecting timeout");
+            }
+            // Start timer for connection timeout
+            if (pdPASS != xTimerStart(gattc_timer, portMAX_DELAY))
+			{
+				ESP_LOGE(MODULE_NAME, "Failed to start connecting timeout timer");
+			}
+            // Subscribe for indication
+            gattc_manager_subscribing(p_gattc_manager);
+
             status = STATUS_HANDLE;
             break;
 
         case EXIT_SIG:
             ESP_LOGI(MODULE_NAME, "Exit: gattc_manager_state_connected");
+            if (pdPASS != xTimerStop(gattc_timer, portMAX_DELAY))
+			{
+				ESP_LOGE(MODULE_NAME, "Failed to stop connecting timeout timer");
+			}
             status = STATUS_HANDLE;
+            break;
+
+        case GATT_TIMER_TIMEOUT:
+            ESP_LOGW(MODULE_NAME, "Event: GATT_TIMER_TIMEOUT");
+            gattc_manager_subscribing(p_gattc_manager);
+            break;
+
+        case GATT_DEVICE_SUBSCRIBED:
+            ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_DEVICE_SUBSCRIBED");
+            p_gattc_manager->device_subscribeded++;
+            ESP_LOGI(MODULE_NAME, "Subscribed devices: (%d/%d)", p_gattc_manager->device_subscribeded, p_gattc_manager->device_max);
+            if(p_gattc_manager->device_connected >= p_gattc_manager->device_max)
+            {
+                status = TRANSITION(gattc_manager_state_subscribed);
+            }
             break;
 
         case GATT_DEVICE_DISCONNECTED:
@@ -1638,6 +1745,59 @@ static eStatus gattc_manager_state_connected(StateMachine_t* const me, const Evt
 
         default:
             break;
+    }
+    return status;
+}
+
+static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const EvtHandle_t p_event)
+{
+    eStatus status = STATUS_IGNORE;
+    gattc_device_manager_actor_t* p_gattc_manager = (gattc_device_manager_actor_t*)me;
+    ESP_LOGD(MODULE_NAME, "State: gattc_manager_state_subscribed");
+    switch (p_event->sig)
+    {
+            
+            case ENTRY_SIG:
+                ESP_LOGI(MODULE_NAME, "Entry: gattc_manager_state_subscribed");
+                // // List all connected devices
+                // for(uint8_t idx=0; idx < p_gattc_manager->device_max; idx++)
+                // {
+                //     gattc_device_actor_t* p_gatt_device = ble_gattc_get_actor(idx);
+                //     if (p_gatt_device->super.sm.statehandler == (StateHandler) gattc_device_state_subscribed)
+                //     {
+                //         ESP_LOGI(MODULE_NAME, "Subscribed device ID: %d", idx);
+                //         ble_gattc_profile_print_app_info(idx);
+                //     }
+                // }
+                status = STATUS_HANDLE;
+                break;
+    
+            case EXIT_SIG:
+                ESP_LOGI(MODULE_NAME, "Exit: gattc_manager_state_subscribed");
+                status = STATUS_HANDLE;
+                break;
+    
+            // case GATT_DEVICE_UNSUBSCRIBED:
+            //     ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_DEVICE_UNSUBSCRIBED");
+            //     p_gattc_manager->device_subscribeded--;
+            //     ESP_LOGI(MODULE_NAME, "Subscribed devices: (%d/%d)", p_gattc_manager->device_subscribeded, p_gattc_manager->device_max);
+            //     if(p_gattc_manager->device_subscribeded <= 0)
+            //     {
+            //         status = TRANSITION(gattc_manager_state_connected);
+            //     }
+            //     break;
+    
+            // case GATT_DEVICE_DISCONNECTED:
+            //     ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_DEVICE_DISCONNECTED");
+            //     if (gattc_manager_disconnect_handler(p_gattc_manager) != 0)
+            //     {
+            //         ESP_LOGE(MODULE_NAME, "gattc_manager_disconnect_handler() failed");
+            //     }
+            //     status = TRANSITION(gattc_manager_state_scanning);
+            //     break;
+    
+            default:
+                break;
     }
     return status;
 }

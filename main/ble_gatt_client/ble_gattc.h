@@ -47,7 +47,7 @@
 #define BLE_ADDR_LEN                            (6)
 
 #define BLE_CONF_AUTO_RESCAN                    (0) // 1-> automatically rescan after scan duration timeout or disconnect
-
+#define BLE_NUMBER_TARGET_DEVICE                (4) // Number of target device to connect
 /******************************************************************************
 * Macros
 *******************************************************************************/
