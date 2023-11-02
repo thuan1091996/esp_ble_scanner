@@ -1677,6 +1677,9 @@ static eStatus gattc_manager_state_connecting(StateMachine_t* const me, const Ev
 static eStatus gattc_manager_state_connected(StateMachine_t* const me, const EvtHandle_t p_event)
 {
     eStatus status = STATUS_IGNORE;
+    #define SUBSCRIBE_RETRY_MAX      5
+    static uint8_t subscribe_retry = 0;
+
     gattc_device_manager_actor_t* p_gattc_manager = (gattc_device_manager_actor_t*)me;
     ESP_LOGD(MODULE_NAME, "State: gattc_manager_state_connected");
     switch (p_event->sig)
@@ -1705,6 +1708,7 @@ static eStatus gattc_manager_state_connected(StateMachine_t* const me, const Evt
 				ESP_LOGE(MODULE_NAME, "Failed to start connecting timeout timer");
 			}
             // Subscribe for indication
+            subscribe_retry = 0;
             gattc_manager_subscribing(p_gattc_manager);
 
             status = STATUS_HANDLE;
@@ -1721,7 +1725,16 @@ static eStatus gattc_manager_state_connected(StateMachine_t* const me, const Evt
 
         case GATT_TIMER_TIMEOUT:
             ESP_LOGW(MODULE_NAME, "Event: GATT_TIMER_TIMEOUT");
-            gattc_manager_subscribing(p_gattc_manager);
+            if (subscribe_retry < SUBSCRIBE_RETRY_MAX)
+            {
+                subscribe_retry++;
+                ESP_LOGW(MODULE_NAME, "Retry subscribing: %d / %d", subscribe_retry, SUBSCRIBE_RETRY_MAX);
+                gattc_manager_subscribing(p_gattc_manager);
+            }
+            else
+            {
+                ESP_LOGE(MODULE_NAME, "Failed to subscribe after %d retries", SUBSCRIBE_RETRY_MAX);
+            }
             break;
 
         case GATT_DEVICE_SUBSCRIBED:
