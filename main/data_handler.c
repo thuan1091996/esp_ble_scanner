@@ -16,7 +16,6 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-#include "cJSON.h"
 #include "task_common.h"
 
 #include "data_handler.h"
@@ -104,6 +103,22 @@ void data_handling_task(void* param)
     }
 }
 
+int sensor_data_validate(uint8_t* data, uint16_t len)
+{
+    // Validate data format
+    if(data == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Invalid data");
+        return -1;
+    }
+    if(len != sizeof(sensor_data_t))
+    {
+        ESP_LOGE(MODULE_NAME, "Invalid data length");
+        return -1;
+    }
+    return 0;
+}
+
 /*
  * @brief: Validate & send sensor data based on given format
  * @param data (in): pointer to data buffer
@@ -177,9 +192,9 @@ int sensor_data_format_json(ble_sensor_data_packet_t* sensor_data_packet, char* 
     do
     {
         // Add sensor data
-        cJSON *sensor_data = NULL;
-        sensor_data = cJSON_CreateObject();
-        if(sensor_data == NULL)
+        cJSON *sensor_data_json_obj = NULL;
+        sensor_data_json_obj = cJSON_CreateObject();
+        if(sensor_data_json_obj == NULL)
         {
             ESP_LOGE(MODULE_NAME, "Create JSON object failed");
             status = -1;
@@ -191,14 +206,14 @@ int sensor_data_format_json(ble_sensor_data_packet_t* sensor_data_packet, char* 
                             sensor_data_packet->device_addr[0], sensor_data_packet->device_addr[1], sensor_data_packet->device_addr[2],
                             sensor_data_packet->device_addr[3], sensor_data_packet->device_addr[4], sensor_data_packet->device_addr[5]);
         cJSON_AddStringToObject(root, "addr", addr_str);
-        cJSON_AddNumberToObject(sensor_data, "fcnt", sensor_data_packet->sensor_payload.fcnt);
-        cJSON_AddNumberToObject(sensor_data, "aclx", sensor_data_packet->sensor_payload.acl_x);
-        cJSON_AddNumberToObject(sensor_data, "acly", sensor_data_packet->sensor_payload.acl_y);
-        cJSON_AddNumberToObject(sensor_data, "aclz", sensor_data_packet->sensor_payload.acl_z);
-        cJSON_AddNumberToObject(sensor_data, "gyrx", sensor_data_packet->sensor_payload.gyro_x);
-        cJSON_AddNumberToObject(sensor_data, "gyry", sensor_data_packet->sensor_payload.gyro_y);
-        cJSON_AddNumberToObject(sensor_data, "gyrz", sensor_data_packet->sensor_payload.gyro_z);
-        cJSON_AddItemToObject(root, "sensor", sensor_data);
+        cJSON_AddNumberToObject(sensor_data_json_obj, "fcnt", sensor_data_packet->sensor_payload.fcnt);
+        cJSON_AddNumberToObject(sensor_data_json_obj, "aclx", sensor_data_packet->sensor_payload.acl_x);
+        cJSON_AddNumberToObject(sensor_data_json_obj, "acly", sensor_data_packet->sensor_payload.acl_y);
+        cJSON_AddNumberToObject(sensor_data_json_obj, "aclz", sensor_data_packet->sensor_payload.acl_z);
+        cJSON_AddNumberToObject(sensor_data_json_obj, "gyrx", sensor_data_packet->sensor_payload.gyro_x);
+        cJSON_AddNumberToObject(sensor_data_json_obj, "gyry", sensor_data_packet->sensor_payload.gyro_y);
+        cJSON_AddNumberToObject(sensor_data_json_obj, "gyrz", sensor_data_packet->sensor_payload.gyro_z);
+        cJSON_AddItemToObject(root, "sensor", sensor_data_json_obj);
         char* str_json = cJSON_PrintUnformatted(root);
         if(str_json == NULL)
         {
@@ -217,3 +232,99 @@ int sensor_data_format_json(ble_sensor_data_packet_t* sensor_data_packet, char* 
     return status;
 }
 
+cJSON * json_sensor_data_format(ble_sensor_data_packet_t* sensor_data_packet)
+{
+    assert(sensor_data_packet != NULL);
+    cJSON *root = NULL;
+    root = cJSON_CreateObject();
+    if(root == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Create JSON root for json_sensor_data_format failed");
+        return NULL;
+    }
+    // Add device address
+    char addr_str[18] = {0};
+    sprintf(addr_str, "%02X:%02X:%02X:%02X:%02X:%02X", 
+                        sensor_data_packet->device_addr[0], sensor_data_packet->device_addr[1], sensor_data_packet->device_addr[2],
+                        sensor_data_packet->device_addr[3], sensor_data_packet->device_addr[4], sensor_data_packet->device_addr[5]);
+    cJSON_AddStringToObject(root, "addr", addr_str);
+    // Add sensor data
+    cJSON *sensor_data_json_obj = NULL;
+    sensor_data_json_obj = cJSON_CreateObject();
+    if(sensor_data_json_obj == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Create JSON sensor_data_json_obj for json_sensor_data_format failed");
+        cJSON_Delete(root);
+        return NULL;
+    }
+    cJSON_AddNumberToObject(sensor_data_json_obj, "fcnt", sensor_data_packet->sensor_payload.fcnt);
+    cJSON_AddNumberToObject(sensor_data_json_obj, "aclx", sensor_data_packet->sensor_payload.acl_x);
+    cJSON_AddNumberToObject(sensor_data_json_obj, "acly", sensor_data_packet->sensor_payload.acl_y);
+    cJSON_AddNumberToObject(sensor_data_json_obj, "aclz", sensor_data_packet->sensor_payload.acl_z);
+    cJSON_AddNumberToObject(sensor_data_json_obj, "gyrx", sensor_data_packet->sensor_payload.gyro_x);
+    cJSON_AddNumberToObject(sensor_data_json_obj, "gyry", sensor_data_packet->sensor_payload.gyro_y);
+    cJSON_AddNumberToObject(sensor_data_json_obj, "gyrz", sensor_data_packet->sensor_payload.gyro_z);
+    cJSON_AddItemToObject(root, "sensor", sensor_data_json_obj);
+    return root;    
+}
+
+extern ble_sensor_data_packet_t* p_sensor_data[];
+int sensor_data_msgs_format_json(char* json_out, uint16_t json_max_length, 
+                                 ble_sensor_data_packet_t* sensor_data, uint8_t sensor_num)
+{
+    assert(json_out != NULL);
+    assert(json_max_length > 0);
+    cJSON *root = NULL;
+    root = cJSON_CreateObject();
+    if(root == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Create JSON root for sensor_data_msgs_format_json failed");
+        return -1;
+    }
+    // TODO - TMT: Add timestamp to root
+    // Add sensor data array to root
+    cJSON *sensor_data_json_array = NULL;
+    sensor_data_json_array = cJSON_CreateArray();
+    if(sensor_data_json_array == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Create JSON sensor_data_json_array for sensor_data_msgs_format_json failed");
+        goto json_failed_cleanup;
+    }
+    cJSON_AddItemToObject(root, "sensor_data", sensor_data_json_array);
+
+    // Add sensor data
+    for(uint8_t idx=0; idx < sensor_num; idx++)
+    {
+//        cJSON *sensor_data_json_obj = json_sensor_data_format(*((ble_sensor_data_packet_t**)&sensor_data[idx]));
+        cJSON *sensor_data_json_obj = json_sensor_data_format(p_sensor_data[idx]);
+
+        if(sensor_data_json_obj == NULL)
+        {
+            ESP_LOGE(MODULE_NAME, "Create JSON sensor_data_json_obj for sensor_data_json_array failed at idx %d", idx);
+            goto json_failed_cleanup;
+        }
+        cJSON_AddItemToArray(sensor_data_json_array, sensor_data_json_obj);
+    }
+    
+    char* str_json = cJSON_PrintUnformatted(root);
+    // char* str_json = cJSON_Print(root);
+    if(str_json == NULL)
+    {
+        ESP_LOGE(MODULE_NAME, "Create JSON string failed");
+        goto json_failed_cleanup;
+    }
+    if(strlen(str_json) > json_max_length)
+    {
+        ESP_LOGW(MODULE_NAME, "JSON string is too long (%d/%d), data will be truncated", strlen(str_json), json_max_length);
+    }
+    memcpy(json_out, str_json, json_max_length);
+    ESP_LOGI(MODULE_NAME, "JSON =========================== \r\n: %s ================ \r\n", str_json);
+    free(str_json);
+    cJSON_Delete(root);
+
+
+    return 0;
+json_failed_cleanup:
+    cJSON_Delete(root);
+    return -1;
+}

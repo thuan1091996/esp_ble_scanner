@@ -28,6 +28,7 @@
 * Includes
 *******************************************************************************/
 #include "stdint.h"
+#include "cJSON.h"
 
 /******************************************************************************
 * Preprocessor Constants
@@ -77,8 +78,13 @@ typedef struct {
 extern "C"{
 #endif
 void data_handling_task(void* param);
+int sensor_data_validate(uint8_t* data, uint16_t len);
 int sensor_data_sending(uint8_t* data, uint16_t len);
 int sensor_data_format_json(ble_sensor_data_packet_t* sensor_data_packet, char* json_str, uint16_t json_str_max_len);
+int sensor_data_msgs_format_json(char* json_out, uint16_t json_max_length, 
+                                 ble_sensor_data_packet_t* sensor_data, uint8_t sensor_num);
+cJSON * json_sensor_data_format(ble_sensor_data_packet_t* sensor_data_packet);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

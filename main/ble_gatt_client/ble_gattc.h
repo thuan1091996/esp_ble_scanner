@@ -28,7 +28,7 @@
 * Includes
 *******************************************************************************/
 #include <stdint.h>
-
+#include "data_handler.h"
 /******************************************************************************
 * Preprocessor Constants
 *******************************************************************************/
@@ -62,7 +62,7 @@ typedef enum
     PROFILE_B_APP_ID,
     PROFILE_C_APP_ID,
     PROFILE_D_APP_ID,
-    PROFILE_NUM_MAX
+    PROFILE_NUM_MAX = BLE_NUMBER_TARGET_DEVICE
 }app_profile_id;
 
 typedef enum
@@ -110,7 +110,7 @@ typedef struct
     ble_gap_callback_t ble_gap_cb;
     //When found an advertising packet with appropriate filters, this callback will be called
     void (*ble_found_adv_packet_cb)(void* p_data, void* p_data_len);
-    ble_gatt_ccc_cb ble_gatt_ccc_cb[PROFILE_NUM_MAX];
+    ble_gatt_ccc_cb ble_gatt_ccc_cb[BLE_NUMBER_TARGET_DEVICE];
 }ble_client_callback_t;
 
 /******************************************************************************

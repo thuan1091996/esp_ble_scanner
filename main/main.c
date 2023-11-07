@@ -95,7 +95,10 @@ int app_ble_client_init()
 {
     ble_client_callback_t ble_client_callback = 
     {
-        .ble_gatt_ccc_cb[0] = &app_ble_data_handling,
+        // .ble_gatt_ccc_cb[0] = &app_ble_data_handling,
+        // .ble_gatt_ccc_cb[1] = &app_ble_data_handling,
+        // .ble_gatt_ccc_cb[2] = &app_ble_data_handling,
+        // .ble_gatt_ccc_cb[3] = &app_ble_data_handling,
     };
     if( ble_gatt_client_init(&ble_client_callback) != SUCCESS)
     {
@@ -191,21 +194,28 @@ void app_main(void)
 /**
  * @brief: Receive data from BLE GATTC and send to data handling task
  * 
- * @param p_data: Raw ble_client_packet_t received packet
+ * @param p_data: Raw ble_sensor_data_packet_t received packet
  * @param data_len: Length of received packet
  */
 void app_ble_data_handling(void* p_data, void* data_len)
 {
     ESP_LOGD(MODULE_NAME, "Received data from BLE GATTC");
-    ble_client_packet_t* p_ble_packet = (ble_client_packet_t*)p_data;
-    if(p_ble_packet == NULL || p_ble_packet->p_payload == NULL)
+    ble_sensor_data_packet_t* p_ble_packet = (ble_sensor_data_packet_t*)p_data;
+    if(p_ble_packet == NULL)
     {
         ESP_LOGE(MODULE_NAME, "Invalid BLE packet");
         return;
     }
+    if (*(uint16_t*)data_len != sizeof(ble_sensor_data_packet_t))
+    {
+        ESP_LOGE(MODULE_NAME, "Invalid BLE packet length");
+        return;
+    }
+    #if 0
+    
     // Convert BLE data packet into ble_sensor_data_packet_t
     ble_sensor_data_packet_t ble_sensor_data_packet = {0};
-    memcpy(ble_sensor_data_packet.device_addr, p_ble_packet->ble_addr, sizeof(p_ble_packet->ble_addr));
+    memcpy(ble_sensor_data_packet.device_addr, p_ble_packet->device_addr, sizeof(p_ble_packet->device_addr));
     // Verify sensor data length
     if(p_ble_packet->payload_len != sizeof(sensor_data_t))
     {
@@ -213,7 +223,8 @@ void app_ble_data_handling(void* p_data, void* data_len)
         return;
     }
     memcpy(&ble_sensor_data_packet.sensor_payload, p_ble_packet->p_payload, p_ble_packet->payload_len);
-    sensor_data_sending(&ble_sensor_data_packet, sizeof(ble_sensor_data_packet_t));
+    #endif /* End of 0 */
+    sensor_data_sending(p_ble_packet, sizeof(ble_sensor_data_packet_t));
 }
 
 void app_wifi_connected_cb(void* p_data, void* data_len)

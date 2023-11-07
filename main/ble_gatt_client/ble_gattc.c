@@ -51,6 +51,7 @@
 #define GATT_DEVICE_MANAGER_ACTOR_TASK_STACK_SIZE       (1024*4)
 #define GATT_DEVICE_MANAGER_CONNECT_TIMEOUT             (pdMS_TO_TICKS(60 * 1000)) // 60s
 #define GATT_DEVICE_MANAGER_SUBSCRIBE_TIMEOUT           (pdMS_TO_TICKS(1 * 1000)) // 1s
+#define GATT_DEVICE_MANAGER_SEND_DATA_PERIOD            (pdMS_TO_TICKS(75)) // 75ms
 
 // GATT device actor
 #define GATT_DEVICE_ACTOR_QUEUE_LEN                     (10)
@@ -72,7 +73,6 @@ typedef struct
     Active super;
     uint8_t device_max;
     uint8_t device_connected;
-    uint8_t device_subscribeded;             
 }gattc_device_manager_actor_t;
 
 typedef struct
@@ -116,6 +116,10 @@ static const Evt gatt_device_unsubscribe_evt = {
 
 static const Evt gatt_device_scan_timeout_evt = {
         .sig = GATT_SCAN_TIMEOUT,
+};
+
+const Evt gatt_device_data_available_evt = {
+        .sig = GATT_DEVICE_DATA_AVAILABLE,
 };
 
 /******************************************************************************
@@ -194,7 +198,10 @@ struct gattc_profile_inst
     uint16_t char_handle;          
     uint16_t descr_handle;         
     // Nofication/Indication callback
-    ble_gatt_ccc_cb char_ccc_changed_cb;   
+    ble_gatt_ccc_cb char_ccc_changed_cb;
+    // Data
+    bool is_ble_data_available;
+    ble_sensor_data_packet_t ble_data;
 };
 
 /******************************************************************************
@@ -212,19 +219,43 @@ int profile_a_ccc_changed_callback(uint16_t gattc_if, uint16_t ccc_type, void* p
  *******************************************************************************/
 
 // GATT data connected to GATT event handler
-static struct gattc_profile_inst gl_profile_tab[PROFILE_NUM_MAX] = {
+static struct gattc_profile_inst gl_profile_tab[BLE_NUMBER_TARGET_DEVICE] = {
     [PROFILE_A_APP_ID] = {
         .gattc_cb = gattc_profile_event_handler,
     },
+#if (BLE_NUMBER_TARGET_DEVICE > 1)
     [PROFILE_B_APP_ID] = {
         .gattc_cb = gattc_profile_event_handler,
     },
+#endif /* End of  */
+
+#if (BLE_NUMBER_TARGET_DEVICE > 2)
     [PROFILE_C_APP_ID] = {
         .gattc_cb = gattc_profile_event_handler,
     },
-    // [PROFILE_D_APP_ID] = {
-    //     .gattc_cb = gattc_profile_event_handler,
-    // },
+#endif /* End of  */
+
+#if (BLE_NUMBER_TARGET_DEVICE > 3)
+    [PROFILE_D_APP_ID] = {
+        .gattc_cb = gattc_profile_event_handler,
+    },
+#endif /* End of  */
+};
+ble_sensor_data_packet_t* p_sensor_data[BLE_NUMBER_TARGET_DEVICE] =
+{
+    &gl_profile_tab[PROFILE_A_APP_ID].ble_data,
+#if (BLE_NUMBER_TARGET_DEVICE > 1)
+    &gl_profile_tab[PROFILE_B_APP_ID].ble_data,
+#endif
+
+#if (BLE_NUMBER_TARGET_DEVICE > 2)
+    &gl_profile_tab[PROFILE_C_APP_ID].ble_data,
+#endif
+
+#if (BLE_NUMBER_TARGET_DEVICE > 3)
+    &gl_profile_tab[PROFILE_D_APP_ID].ble_data,
+#endif
+
 };
 
 static ble_client_callback_t ble_client_callback = {0};
@@ -662,10 +693,12 @@ int on_gatt_server_initiated_update_sucess(esp_gatt_if_t gattc_if,  uint16_t con
 int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_t descr_handle, 
                             gatt_char_evt_type_value evt_type, uint8_t* p_data, uint16_t data_len)
 {
-    ESP_LOGI(MODULE_NAME, "on_gatt_ccc_changed_cb");
+    ESP_LOGI(MODULE_NAME, "on_gatt_ccc_changed_cb of gattc_if %d, connect_id %d with datalen %d, evt_type %d",
+                                                     gattc_if, connect_id, data_len, evt_type);
     // Get appID based on gattc_if
     int app_id = ble_gattc_profile_lookup_appid_by_interface(gattc_if);
     assert(app_id >= 0);
+    assert(gl_profile_tab[app_id].conn_id == connect_id);
     if(gl_profile_tab[app_id].char_handle != descr_handle)
     {
         ESP_LOGE(MODULE_NAME, "Invalid char handle");
@@ -673,20 +706,40 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
     }
 
 
-    if(gl_profile_tab[app_id].char_ccc_changed_cb == NULL)
+    int status = sensor_data_validate(p_data, data_len);
+    if(status != 0)
     {
-        ESP_LOGE(MODULE_NAME, "Invalid Char CCC changed callback");
-        return -1;  
+        ESP_LOGE(MODULE_NAME, "Invalid sensor data");
+        return -1;
     }
+
+    ble_sensor_data_packet_t ble_data_packet = {0};
+    uint16_t ble_packet_size = sizeof(ble_data_packet);
+    uint16_t ble_data_packet_len = sizeof(ble_sensor_data_packet_t);
+    // Get sensor address
+    memcpy(ble_data_packet.device_addr, gl_profile_tab[app_id].remote_bda, sizeof(esp_bd_addr_t));
+    // Get sensor data
+    memcpy(&ble_data_packet.sensor_payload, p_data, data_len);
+    ESP_LOGI(MODULE_NAME, "[%d] CCC changed callback", app_id);
+    memcpy(&gl_profile_tab[app_id].ble_data, &ble_data_packet, sizeof(ble_sensor_data_packet_t));
+    gl_profile_tab[app_id].is_ble_data_available = true;
+    // Invoke callback if available
+    if(gl_profile_tab[0].char_ccc_changed_cb == NULL)
+    {
+        ESP_LOGI(MODULE_NAME, "Invalid Char CCC changed callback");
+        // return -1;  
+    }
+    else
+    {
+        gl_profile_tab[0].char_ccc_changed_cb(&ble_data_packet, &ble_packet_size);    
+    }
+
+    // Post event to device actor
+    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(app_id);
+    assert(p_gattc_device_actor != NULL);
+    Active_post((Active*)p_gattc_device_actor, &gatt_device_data_available_evt);
     
-    ble_client_packet_t ble_client_packet = {0};
-    uint16_t ble_client_packet_len = sizeof(ble_client_packet_t);
-    ble_client_packet.evt_type = evt_type;
-    //Get address of the device
-    memcpy(ble_client_packet.ble_addr, gl_profile_tab[app_id].remote_bda, BLE_ADDR_LEN);
-    ble_client_packet.p_payload = p_data;
-    ble_client_packet.payload_len = data_len;
-    gl_profile_tab[app_id].char_ccc_changed_cb(&ble_client_packet, &ble_client_packet_len);
+
     return 0;
 }
 
@@ -752,16 +805,6 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
             {
                 ESP_LOGE(MODULE_NAME, "on_gattc_device_connected() failed");
             }
-
-            #if (BLE_CONF_UPDATE_CONN_PARAM != 0)
-            esp_ble_conn_update_params_t new_config;
-            new_config.min_int = 10;  // x 1.25ms
-            new_config.max_int = 100; // x 1.25ms
-            new_config.latency = 0;   // number of skippable connection events
-            new_config.timeout = 500; // x 6.25ms, time before peripheral will assume connection is dropped.
-            memcpy(new_config.bda,  &whitelist_addr[0], 6);
-            esp_ble_gap_update_conn_params(&new_config);
-            #endif /* End of (BLE_CONF_UPDATE_CONN_PARAM != 0) */
 
             break;
         case ESP_GATTC_DIS_SRVC_CMPL_EVT:
@@ -831,6 +874,18 @@ static void gattc_profile_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_
             {
                 ESP_LOGE(MODULE_NAME, "ble_gattc_profile_get_server_addr() failed");
             }
+
+            // Update connection param
+            #if !(BLE_CONF_UPDATE_CONN_PARAM != 0)
+            esp_ble_conn_update_params_t new_config;
+            new_config.min_int = 10;  // x 1.25ms
+            new_config.max_int = 10; // x 1.25ms
+            new_config.latency = 5;   // number of skippable connection events
+            new_config.timeout = 200; // x 6.25ms, time before peripheral will assume connection is dropped.
+            memcpy(new_config.bda, target_addr, sizeof(esp_bd_addr_t));
+            esp_ble_gap_update_conn_params(&new_config);
+            #endif /* End of (BLE_CONF_UPDATE_CONN_PARAM != 0) */
+
             if (0 != esp_ble_gattc_register_for_notify(gattc_if, target_addr, char_handle))
             {
                 ESP_LOGE(MODULE_NAME, "Failed to register for notify with conn_id %x", p_data->search_cmpl.conn_id);
@@ -1083,7 +1138,7 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
             break;
 
         case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
-            ESP_LOGD(MODULE_NAME, "update connection params status = %d, min_int = %d, max_int = %d,conn_int = %d,latency = %d, timeout = %d",
+            ESP_LOGW(MODULE_NAME, "update connection params status = %d, min_int = %d, max_int = %d,conn_int = %d,latency = %d, timeout = %d",
                     param->update_conn_params.status,
                     param->update_conn_params.min_int,
                     param->update_conn_params.max_int,
@@ -1451,6 +1506,12 @@ static eStatus gattc_device_state_subscribed(StateMachine_t* const me, const Evt
             status = TRANSITION(gattc_device_state_connected);
             break;
 
+        // case GATT_DEVICE_DATA_AVAILABLE:
+        //     ESP_LOGI(MODULE_NAME, "Device[%d] - Event: GATT_DEVICE_DATA_AVAILABLE", p_gatt_device->device_id);
+        //     gl_profile_tab[p_gatt_device->device_id].is_ble_data_available = true;
+        //     status = STATUS_HANDLE;
+        //     break;
+
         default:
             break;
     }
@@ -1504,6 +1565,20 @@ int gattc_manager_disconnect_handler(gattc_device_manager_actor_t* p_dev_manger)
     ESP_LOGI(MODULE_NAME, "Remaining connected devices: (%d/%d)", p_dev_manger->device_connected, p_dev_manger->device_max);
 
     return 0;
+}
+
+int gattc_manager_number_subscribed_devices()
+{
+    int number_subscribed_devices = 0;
+    for(uint8_t idx=0; idx < ble_gattc_manager.device_max; idx++)
+    {
+        gattc_device_actor_t* p_gatt_device = ble_gattc_get_actor(idx);
+        if (p_gatt_device->super.sm.statehandler == (StateHandler) gattc_device_state_subscribed)
+        {
+            number_subscribed_devices++;
+        }
+    }
+    return number_subscribed_devices;
 }
 
 void gattc_manager_subscribing(gattc_device_manager_actor_t* p_dev_manger)
@@ -1739,8 +1814,8 @@ static eStatus gattc_manager_state_connected(StateMachine_t* const me, const Evt
 
         case GATT_DEVICE_SUBSCRIBED:
             ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_DEVICE_SUBSCRIBED");
-            p_gattc_manager->device_subscribeded++;
-            ESP_LOGI(MODULE_NAME, "Subscribed devices: (%d/%d)", p_gattc_manager->device_subscribeded, p_gattc_manager->device_max);
+            int number_subscribed_devices = gattc_manager_number_subscribed_devices();
+            ESP_LOGI(MODULE_NAME, "Subscribed devices: (%d/%d)", number_subscribed_devices, p_gattc_manager->device_max);
             if(p_gattc_manager->device_connected >= p_gattc_manager->device_max)
             {
                 status = TRANSITION(gattc_manager_state_subscribed);
@@ -1772,42 +1847,88 @@ static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const Ev
             
             case ENTRY_SIG:
                 ESP_LOGI(MODULE_NAME, "Entry: gattc_manager_state_subscribed");
-                // // List all connected devices
-                // for(uint8_t idx=0; idx < p_gattc_manager->device_max; idx++)
-                // {
-                //     gattc_device_actor_t* p_gatt_device = ble_gattc_get_actor(idx);
-                //     if (p_gatt_device->super.sm.statehandler == (StateHandler) gattc_device_state_subscribed)
-                //     {
-                //         ESP_LOGI(MODULE_NAME, "Subscribed device ID: %d", idx);
-                //         ble_gattc_profile_print_app_info(idx);
-                //     }
-                // }
+                // Change timeout timer period to sending duration
+                if (pdPASS != xTimerChangePeriod(gattc_timer, GATT_DEVICE_MANAGER_SEND_DATA_PERIOD, 1000))
+                {
+                    ESP_LOGE(MODULE_NAME, "Failed to change timeout timer to sending duration");
+                }
+                // Start timer for sending duration
+                if (pdPASS != xTimerStart(gattc_timer, portMAX_DELAY))
+                {
+                    ESP_LOGE(MODULE_NAME, "Failed to start sending duration timer");
+                }
                 status = STATUS_HANDLE;
                 break;
     
             case EXIT_SIG:
                 ESP_LOGI(MODULE_NAME, "Exit: gattc_manager_state_subscribed");
+                if (pdPASS != xTimerStop(gattc_timer, portMAX_DELAY))
+			    {
+				    ESP_LOGE(MODULE_NAME, "Failed to stop sending duration timer");
+			    }
                 status = STATUS_HANDLE;
                 break;
     
-            // case GATT_DEVICE_UNSUBSCRIBED:
-            //     ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_DEVICE_UNSUBSCRIBED");
-            //     p_gattc_manager->device_subscribeded--;
-            //     ESP_LOGI(MODULE_NAME, "Subscribed devices: (%d/%d)", p_gattc_manager->device_subscribeded, p_gattc_manager->device_max);
-            //     if(p_gattc_manager->device_subscribeded <= 0)
-            //     {
-            //         status = TRANSITION(gattc_manager_state_connected);
-            //     }
-            //     break;
+            case GATT_DEVICE_UNSUBSCRIBED:
+                ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_DEVICE_UNSUBSCRIBED");
+                int number_subscribed_devices = gattc_manager_number_subscribed_devices();
+                ESP_LOGI(MODULE_NAME, "Subscribed devices: (%d/%d)", number_subscribed_devices, p_gattc_manager->device_max);
+                status = TRANSITION(gattc_manager_state_connected);
+                break;
     
-            // case GATT_DEVICE_DISCONNECTED:
-            //     ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_DEVICE_DISCONNECTED");
-            //     if (gattc_manager_disconnect_handler(p_gattc_manager) != 0)
-            //     {
-            //         ESP_LOGE(MODULE_NAME, "gattc_manager_disconnect_handler() failed");
-            //     }
-            //     status = TRANSITION(gattc_manager_state_scanning);
-            //     break;
+            case GATT_DEVICE_DISCONNECTED:
+                ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_DEVICE_DISCONNECTED");
+                if (gattc_manager_disconnect_handler(p_gattc_manager) != 0)
+                {
+                    ESP_LOGE(MODULE_NAME, "gattc_manager_disconnect_handler() failed");
+                }
+                status = TRANSITION(gattc_manager_state_scanning);
+                break;
+            
+            case GATT_TIMER_TIMEOUT:
+            #define DEVICE_MSG_JSON_MAX_SIZE    1024
+                static char sensor_msgs_json[DEVICE_MSG_JSON_MAX_SIZE * PROFILE_NUM_MAX];
+                memset(sensor_msgs_json, 0, sizeof(sensor_msgs_json));
+                ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_TIMER_TIMEOUT");
+                // Make sure all devices data are available
+                for(uint8_t idx=0; idx <= p_gattc_manager->device_max; idx++)
+                {
+                    #if 0
+                    // Option 1 - if data of device X is not available, zeroes that device data
+                    
+                    #endif /* End of 0 */
+                    if (gl_profile_tab[idx].is_ble_data_available == false)
+                    {
+                        ESP_LOGW(MODULE_NAME, "Device[%d] data is not available", idx);
+                        memset(&gl_profile_tab[idx].ble_data.sensor_payload, 0, sizeof(sensor_data_t));
+                    }
+                    if(idx == p_gattc_manager->device_max)
+                    {
+                        ESP_LOGI(MODULE_NAME, "All devices data are available");
+                        if( 0 != sensor_data_msgs_format_json(sensor_msgs_json, sizeof(sensor_msgs_json),
+                                                              p_sensor_data, p_gattc_manager->device_max))
+                        {
+                            ESP_LOGE(MODULE_NAME, "sensor_data_msgs_format_json() failed");
+                        }
+                        else
+                        {
+                            ESP_LOGD(MODULE_NAME, "sensor_msgs_json: %s", sensor_msgs_json);
+                            sensor_data_evt_t* p_e = (sensor_data_evt_t*)Event_New(SENSOR_DATA_READY, sizeof(sensor_data_evt_t));
+                            if(p_e == NULL)
+                            {
+                                ESP_LOGE(MODULE_NAME, "Create event failed");
+                            }
+                            else
+                            {
+                                p_e->sensor_data_json = sensor_msgs_json;
+                                Active_post(p_mqtt_actor, (Evt*)p_e);
+                            }
+                        }
+                        // Send to MQTT
+                        
+                    }
+                }
+                break;
     
             default:
                 break;
