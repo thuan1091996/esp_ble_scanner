@@ -269,6 +269,43 @@ cJSON * json_sensor_data_format(ble_sensor_data_packet_t* sensor_data_packet)
 }
 
 extern ble_sensor_data_packet_t* p_sensor_data[];
+/*
+ * @brief: Format array of sensor data packet to JSON string 
+ * @param json_out: pointer to output JSON string
+ * @param json_max_length: maximum length of JSON string
+ * @param sensor_data: pointer to array of sensor data packet
+ * @param sensor_num: number of sensor data packet
+ * @return int: 0 if success, -1 if failed
+ * @example:
+{
+    "sensor_data": [
+        {
+            "addr": "EF:F6:06:47:95:23",
+            "sensor": {
+                "fcnt": 2777,
+                "aclx": -6.08300018310547,
+                "acly": -2.244999885559082,
+                "aclz": -7.5580000877380371,
+                "gyrx": 0.0040000001899898052,
+                "gyry": -0.037000000476837158,
+                "gyrz": 0
+            }
+        },
+        {
+            "addr": "E7:78:D8:21:03:37",
+            "sensor": {
+                "fcnt": 3321,
+                "aclx": 3.8204714345426319e-37,
+                "acly": 1.0082513512365273e-34,
+                "aclz": 2.65846275898916e-32,
+                "gyrx": 7.0036532705607975e-30,
+                "gyry": 1.8436203207959919e-27,
+                "gyrz": 4.8494218350807544e-25
+            }
+        }
+    ]
+}
+ */
 int sensor_data_msgs_format_json(char* json_out, uint16_t json_max_length, 
                                  ble_sensor_data_packet_t* sensor_data, uint8_t sensor_num)
 {
@@ -281,10 +318,8 @@ int sensor_data_msgs_format_json(char* json_out, uint16_t json_max_length,
         ESP_LOGE(MODULE_NAME, "Create JSON root for sensor_data_msgs_format_json failed");
         return -1;
     }
-    // TODO - TMT: Add timestamp to root
     // Add sensor data array to root
-    cJSON *sensor_data_json_array = NULL;
-    sensor_data_json_array = cJSON_CreateArray();
+    cJSON *sensor_data_json_array = cJSON_CreateArray();
     if(sensor_data_json_array == NULL)
     {
         ESP_LOGE(MODULE_NAME, "Create JSON sensor_data_json_array for sensor_data_msgs_format_json failed");
@@ -313,12 +348,19 @@ int sensor_data_msgs_format_json(char* json_out, uint16_t json_max_length,
         ESP_LOGE(MODULE_NAME, "Create JSON string failed");
         goto json_failed_cleanup;
     }
+    memset(json_out, 0, json_max_length);
     if(strlen(str_json) > json_max_length)
     {
         ESP_LOGW(MODULE_NAME, "JSON string is too long (%d/%d), data will be truncated", strlen(str_json), json_max_length);
+        memcpy(json_out, str_json, json_max_length);
     }
-    memcpy(json_out, str_json, json_max_length);
-    ESP_LOGI(MODULE_NAME, "JSON =========================== \r\n: %s ================ \r\n", str_json);
+    else
+    {   
+        strcpy(json_out, str_json);
+    	// memcpy(json_out, str_json, strlen(str_json));
+    }
+    ESP_LOGE(MODULE_NAME, "Out %d / %d", strlen(json_out), strlen(str_json));
+    ESP_LOGI(MODULE_NAME, "JSON ===========================: \r\n \r\n %s  \r\n \r\n ===========================: \r\n\r\n", str_json);
     free(str_json);
     cJSON_Delete(root);
 

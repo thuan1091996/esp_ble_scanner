@@ -92,6 +92,7 @@ typedef struct
 {
     Evt super;
     char* sensor_data_json;
+    uint16_t sensor_data_json_len;
 }sensor_data_evt_t;
 
 typedef struct

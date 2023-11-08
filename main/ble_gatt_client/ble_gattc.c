@@ -48,7 +48,7 @@
 // GATT device manager actor
 #define GATT_DEVICE_MANAGER_ACTOR_QUEUE_LEN             (10)
 #define GATT_DEVICE_MANAGER_ACTOR_TASK_PRIORITY         (tskIDLE_PRIORITY + 1)
-#define GATT_DEVICE_MANAGER_ACTOR_TASK_STACK_SIZE       (1024*4)
+#define GATT_DEVICE_MANAGER_ACTOR_TASK_STACK_SIZE       (1024*8)
 #define GATT_DEVICE_MANAGER_CONNECT_TIMEOUT             (pdMS_TO_TICKS(60 * 1000)) // 60s
 #define GATT_DEVICE_MANAGER_SUBSCRIBE_TIMEOUT           (pdMS_TO_TICKS(1 * 1000)) // 1s
 #define GATT_DEVICE_MANAGER_SEND_DATA_PERIOD            (pdMS_TO_TICKS(75)) // 75ms
@@ -1886,9 +1886,6 @@ static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const Ev
                 break;
             
             case GATT_TIMER_TIMEOUT:
-            #define DEVICE_MSG_JSON_MAX_SIZE    1024
-                static char sensor_msgs_json[DEVICE_MSG_JSON_MAX_SIZE * PROFILE_NUM_MAX];
-                memset(sensor_msgs_json, 0, sizeof(sensor_msgs_json));
                 ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_TIMER_TIMEOUT");
                 // Make sure all devices data are available
                 for(uint8_t idx=0; idx <= p_gattc_manager->device_max; idx++)
@@ -1904,6 +1901,8 @@ static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const Ev
                     }
                     if(idx == p_gattc_manager->device_max)
                     {
+                        #define DEVICE_MSG_JSON_MAX_SIZE    512
+                        char sensor_msgs_json[DEVICE_MSG_JSON_MAX_SIZE * PROFILE_NUM_MAX];
                         ESP_LOGI(MODULE_NAME, "All devices data are available");
                         if( 0 != sensor_data_msgs_format_json(sensor_msgs_json, sizeof(sensor_msgs_json),
                                                               p_sensor_data, p_gattc_manager->device_max))
@@ -1913,19 +1912,29 @@ static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const Ev
                         else
                         {
                             ESP_LOGD(MODULE_NAME, "sensor_msgs_json: %s", sensor_msgs_json);
-                            sensor_data_evt_t* p_e = (sensor_data_evt_t*)Event_New(SENSOR_DATA_READY, sizeof(sensor_data_evt_t));
-                            if(p_e == NULL)
+                            // Allocate memory for sensor data json
+                            char* p_sensor_data_json = (char*)malloc(strlen(sensor_msgs_json)+1);
+                            if(p_sensor_data_json == NULL)
                             {
-                                ESP_LOGE(MODULE_NAME, "Create event failed");
+                                ESP_LOGE(MODULE_NAME, "Failed to allocate memory for sensor data json");
                             }
                             else
                             {
-                                p_e->sensor_data_json = sensor_msgs_json;
-                                Active_post(p_mqtt_actor, (Evt*)p_e);
+                                sensor_data_evt_t* p_e = (sensor_data_evt_t*)Event_New(SENSOR_DATA_READY, sizeof(sensor_data_evt_t));
+                                if(p_e != NULL)
+                                {
+                                    strcpy(p_sensor_data_json, sensor_msgs_json);
+                                    p_e->sensor_data_json = p_sensor_data_json;
+                                    p_e->sensor_data_json_len = strlen(p_sensor_data_json) + 1;
+                                    Active_post(p_mqtt_actor, (Evt*)p_e);
+                                }
+                                else
+                                {
+                                    ESP_LOGE(MODULE_NAME, "Create event failed");
+                                    free(p_sensor_data_json);
+                                }
                             }
                         }
-                        // Send to MQTT
-                        
                     }
                 }
                 break;

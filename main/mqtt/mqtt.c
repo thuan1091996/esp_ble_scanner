@@ -296,11 +296,12 @@ static eStatus mqtt_state_active(StateMachine_t* const me, const EvtHandle_t p_e
 
 		case SENSOR_DATA_READY:
 			sensor_data_evt_t* p_data = (sensor_data_evt_t*)p_event;
-			ESP_LOGI(MODULE_NAME, "Publishing data:");
-			if( mqtt_publish(MQTT_DEFAULT_DATA_TOPIC, p_data->sensor_data_json, strlen(p_data->sensor_data_json), 1, 0) != 0)
+			ESP_LOGI(MODULE_NAME, "MQTT Publishing %dB", p_data->sensor_data_json_len);
+			if( mqtt_publish(MQTT_DEFAULT_DATA_TOPIC, p_data->sensor_data_json, p_data->sensor_data_json_len, 1, 0) != 0)
 			{
 				ESP_LOGE(MODULE_NAME, "Failed to publish MQTT data");
 			}
+			free(p_data->sensor_data_json);
 			status = STATUS_HANDLE;
 			break;
 
