@@ -232,6 +232,19 @@ int sensor_data_format_json(ble_sensor_data_packet_t* sensor_data_packet, char* 
     return status;
 }
 
+/**
+ * @brief Convert float number to string with 4 digits after dot
+ * @param input_float
+ * @param out_str
+ * @return void
+ */
+void JSON_convert_float2str(float input_float, char* out_str, uint8_t out_str_max_len)
+{
+    assert(out_str != NULL);
+    memset(out_str, 0, out_str_max_len);
+    sprintf(out_str, "%.04f", input_float);
+}
+
 cJSON * json_sensor_data_format(ble_sensor_data_packet_t* sensor_data_packet)
 {
     assert(sensor_data_packet != NULL);
@@ -259,12 +272,36 @@ cJSON * json_sensor_data_format(ble_sensor_data_packet_t* sensor_data_packet)
     }
     cJSON_AddNumberToObject(sensor_data_json_obj, "time_us", sensor_data_packet->recv_timestamp);
     cJSON_AddNumberToObject(sensor_data_json_obj, "fcnt", sensor_data_packet->sensor_payload.fcnt);
+    
+    #if 0
     cJSON_AddNumberToObject(sensor_data_json_obj, "aclx", sensor_data_packet->sensor_payload.acl_x);
     cJSON_AddNumberToObject(sensor_data_json_obj, "acly", sensor_data_packet->sensor_payload.acl_y);
     cJSON_AddNumberToObject(sensor_data_json_obj, "aclz", sensor_data_packet->sensor_payload.acl_z);
     cJSON_AddNumberToObject(sensor_data_json_obj, "gyrx", sensor_data_packet->sensor_payload.gyro_x);
     cJSON_AddNumberToObject(sensor_data_json_obj, "gyry", sensor_data_packet->sensor_payload.gyro_y);
     cJSON_AddNumberToObject(sensor_data_json_obj, "gyrz", sensor_data_packet->sensor_payload.gyro_z);
+    #else
+    char str_float[15];
+
+    JSON_convert_float2str(sensor_data_packet->sensor_payload.acl_x, str_float, sizeof(str_float));
+    cJSON_AddStringToObject(sensor_data_json_obj, "aclx", str_float);
+
+    JSON_convert_float2str(sensor_data_packet->sensor_payload.acl_y, str_float, sizeof(str_float));
+    cJSON_AddStringToObject(sensor_data_json_obj, "acly", str_float);
+
+    JSON_convert_float2str(sensor_data_packet->sensor_payload.acl_z, str_float, sizeof(str_float));
+    cJSON_AddStringToObject(sensor_data_json_obj, "aclz", str_float);
+
+    JSON_convert_float2str(sensor_data_packet->sensor_payload.gyro_x, str_float, sizeof(str_float));
+    cJSON_AddStringToObject(sensor_data_json_obj, "gyrx", str_float);
+
+    JSON_convert_float2str(sensor_data_packet->sensor_payload.gyro_y, str_float, sizeof(str_float));
+    cJSON_AddStringToObject(sensor_data_json_obj, "gyry", str_float);
+
+    JSON_convert_float2str(sensor_data_packet->sensor_payload.gyro_z, str_float, sizeof(str_float));
+    cJSON_AddStringToObject(sensor_data_json_obj, "gyrz", str_float);
+    #endif 
+
     cJSON_AddItemToObject(root, "sensor", sensor_data_json_obj);
     return root;    
 }
