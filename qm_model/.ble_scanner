@@ -9,8 +9,8 @@
   <item name="backups">0</item>
  </group>
  <group name="windows">
-  <item id="AOs::GATT_DEVICE_MANAGER::SM">0,0,1430,887,*</item>
-  <item id="AOs::GATT_DEVICE::SM">8,32,1260,773</item>
+  <item id="AOs::GATT_DEVICE_MANAGER::SM">0,0,1524,887,*</item>
+  <item id="AOs::GATT_DEVICE::SM">-2,123,1260,773</item>
  </group>
  <group name="search">
   <item name="options">2032128</item>

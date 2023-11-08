@@ -189,7 +189,21 @@ Send subsribe msg to un-subsribe devices</entry>
     <!--${AOs::GATT_DEVICE_MANA~::SM::SUBSCRIBED}-->
     <state name="SUBSCRIBED">
      <documentation>// All devices are subscribed</documentation>
-     <state_glyph node="74,117,34,29"/>
+     <entry>Config timeout to sending duration
+Start timer timeout
+</entry>
+     <exit>Stop timer timeout</exit>
+     <!--${AOs::GATT_DEVICE_MANA~::SM::SUBSCRIBED::SENDING_TIMER_TRIGGER}-->
+     <tran trig="SENDING_TIMER_TRIGGER">
+      <action>for(uint8_t idx = 0; idx &lt; MAX_DE</action>
+      <tran_glyph conn="74,137,3,-1,28">
+       <action box="0,-2,30,6"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="74,117,34,47">
+      <entry box="1,2,33,7"/>
+      <exit box="1,9,32,5"/>
+     </state_glyph>
     </state>
     <state_diagram size="168,193"/>
    </statechart>
@@ -264,12 +278,20 @@ Active_post((Active*)p_gattc_manger, &amp;gatt_device_disconnect_evt);
        <action box="-25,-3,24,3"/>
       </tran_glyph>
      </tran>
+     <!--${AOs::GATT_DEVICE::SM::DEV_SUBSCRIBED::GATT_DEVICE_DATA_AVAILABLE}-->
+     <tran trig="GATT_DEVICE_DATA_AVAILABLE">
+      <action>Active_post((Active*)p_gattc_manger, 
+&amp;gatt_device_X_data_available_evt);</action>
+      <tran_glyph conn="86,76,3,-1,27">
+       <action box="0,-2,31,6"/>
+      </tran_glyph>
+     </tran>
      <state_glyph node="86,52,30,28">
       <entry box="1,2,28,9"/>
       <exit box="1,11,29,9"/>
      </state_glyph>
     </state>
-    <state_diagram size="157,81"/>
+    <state_diagram size="168,101"/>
    </statechart>
   </class>
  </package>
