@@ -44,7 +44,8 @@
 #include "freertos/FreeRTOS.h"
 #include "../task_common.h"
 #include "mqtt.h"
-
+#include "esp_system.h"
+#include "esp_sntp.h"
 // GATT device manager actor
 #define GATT_DEVICE_MANAGER_ACTOR_QUEUE_LEN             (10)
 #define GATT_DEVICE_MANAGER_ACTOR_TASK_PRIORITY         (tskIDLE_PRIORITY + 1)
@@ -718,11 +719,25 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
     uint16_t ble_data_packet_len = sizeof(ble_sensor_data_packet_t);
     // Get sensor address
     memcpy(ble_data_packet.device_addr, gl_profile_tab[app_id].remote_bda, sizeof(esp_bd_addr_t));
+    // Get current timestamp
+    struct timeval tv_now;
+
+    if (gettimeofday(&tv_now, NULL) != 0)
+    {
+        ESP_LOGE(MODULE_NAME, "gettimeofday() failed");
+    }
+    else
+    {
+        ble_data_packet.recv_timestamp = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
+    }
+
     // Get sensor data
     memcpy(&ble_data_packet.sensor_payload, p_data, data_len);
     ESP_LOGI(MODULE_NAME, "[%d] CCC changed callback", app_id);
     memcpy(&gl_profile_tab[app_id].ble_data, &ble_data_packet, sizeof(ble_sensor_data_packet_t));
     gl_profile_tab[app_id].is_ble_data_available = true;
+
+
     // Invoke callback if available
     if(gl_profile_tab[0].char_ccc_changed_cb == NULL)
     {
@@ -1925,7 +1940,7 @@ static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const Ev
                                 {
                                     strcpy(p_sensor_data_json, sensor_msgs_json);
                                     p_e->sensor_data_json = p_sensor_data_json;
-                                    p_e->sensor_data_json_len = strlen(p_sensor_data_json) + 1;
+                                    p_e->sensor_data_json_len = strlen(p_sensor_data_json);
                                     Active_post(p_mqtt_actor, (Evt*)p_e);
                                 }
                                 else

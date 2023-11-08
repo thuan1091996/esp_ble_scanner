@@ -62,6 +62,7 @@ typedef struct {
 
 typedef struct {
     uint8_t device_addr[6];
+    int64_t recv_timestamp;
     sensor_data_t sensor_payload;
 }ble_sensor_data_packet_t;
 

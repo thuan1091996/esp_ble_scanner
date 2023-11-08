@@ -257,6 +257,7 @@ cJSON * json_sensor_data_format(ble_sensor_data_packet_t* sensor_data_packet)
         cJSON_Delete(root);
         return NULL;
     }
+    cJSON_AddNumberToObject(sensor_data_json_obj, "time_us", sensor_data_packet->recv_timestamp);
     cJSON_AddNumberToObject(sensor_data_json_obj, "fcnt", sensor_data_packet->sensor_payload.fcnt);
     cJSON_AddNumberToObject(sensor_data_json_obj, "aclx", sensor_data_packet->sensor_payload.acl_x);
     cJSON_AddNumberToObject(sensor_data_json_obj, "acly", sensor_data_packet->sensor_payload.acl_y);
