@@ -52,7 +52,7 @@
 #define WIFI_CERT_MAX_LEN               (2048)
 
 
-#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_INFO
+#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_WARN
 #define WIFI_CONNECTED_BIT 			    BIT0
 
 #define ESPTOUCH_GOT_CREDENTIAL         BIT1

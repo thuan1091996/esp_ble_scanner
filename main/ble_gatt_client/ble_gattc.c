@@ -35,17 +35,19 @@
 #include "esp_gatt_defs.h"
 #include "esp_bt_main.h"
 #include "esp_gatt_common_api.h"
-
+#include "esp_system.h"
+#include "esp_sntp.h"
 #include "ble_gattc.h"
 #include "task_common.h"
+
+#include "wifi_custom.h"
 
 #define BLE_ACTOR_TEST                          (1)
 #if (BLE_ACTOR_TEST != 0)
 #include "freertos/FreeRTOS.h"
 #include "../task_common.h"
 #include "mqtt.h"
-#include "esp_system.h"
-#include "esp_sntp.h"
+
 // GATT device manager actor
 #define GATT_DEVICE_MANAGER_ACTOR_QUEUE_LEN             (10)
 #define GATT_DEVICE_MANAGER_ACTOR_TASK_PRIORITY         (tskIDLE_PRIORITY + 1)
@@ -1904,8 +1906,12 @@ static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const Ev
                 // Make sure all devices data are available
                 for(uint8_t idx=0; idx <= p_gattc_manager->device_max; idx++)
                 {
-                    #if 0
-                    // Option 1 - if data of device X is not available, zeroes that device data
+                    #if !0
+                    if(wifi_custom__connected() != true)
+                    {
+                        status = STATUS_HANDLE;
+                        break;
+                    }
                     
                     #endif /* End of 0 */
                     if (gl_profile_tab[idx].is_ble_data_available == false)
