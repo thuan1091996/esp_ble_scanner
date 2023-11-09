@@ -306,7 +306,6 @@ cJSON * json_sensor_data_format(ble_sensor_data_packet_t* sensor_data_packet)
     return root;    
 }
 
-extern ble_sensor_data_packet_t* p_sensor_data[];
 /*
  * @brief: Format array of sensor data packet to JSON string 
  * @param json_out: pointer to output JSON string
@@ -368,8 +367,13 @@ int sensor_data_msgs_format_json(char* json_out, uint16_t json_max_length,
     // Add sensor data
     for(uint8_t idx=0; idx < sensor_num; idx++)
     {
-//        cJSON *sensor_data_json_obj = json_sensor_data_format(*((ble_sensor_data_packet_t**)&sensor_data[idx]));
-        cJSON *sensor_data_json_obj = json_sensor_data_format(p_sensor_data[idx]);
+        //Treat sensor_data as an array of ble_sensor_data_packet_t* -> Get ble_sensor_data_packet_t* at index idx
+        ble_sensor_data_packet_t** sensor_data_array = (ble_sensor_data_packet_t**)sensor_data;
+
+        ble_sensor_data_packet_t* sensor_data_at_idx = sensor_data_array[idx];
+
+        cJSON *sensor_data_json_obj = json_sensor_data_format(sensor_data_at_idx);
+//        cJSON *sensor_data_json_obj = json_sensor_data_format(p_sensor_data[idx]);
 
         if(sensor_data_json_obj == NULL)
         {

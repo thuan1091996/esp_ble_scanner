@@ -25,7 +25,7 @@
 
 #define FW_MAJOR_VERSION                            (0)
 #define FW_MINOR_VERSION                            (0)
-#define FW_BUIILD_VERSION                           (1)
+#define FW_BUIILD_VERSION                           (2)
 
 
 #define APP_CONF_ENABLE_BLE_GATTC                   (1)

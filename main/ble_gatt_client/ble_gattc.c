@@ -140,7 +140,7 @@ gatt_device_evt_t* ble_gattc_new_evt(uint16_t evt_sig);
  * Module Preprocessor Constants
  *******************************************************************************/
 #define MODULE_NAME                             "BLE_GATTC"
-#define MODULE_DEFAULT_LOG_LEVEL                ESP_LOG_DEBUG
+#define MODULE_DEFAULT_LOG_LEVEL                ESP_LOG_INFO
 
 #define BLE_GATTC_CONF_WHITE_LIST               1
 
@@ -1521,11 +1521,10 @@ static eStatus gattc_device_state_subscribed(StateMachine_t* const me, const Evt
             status = TRANSITION(gattc_device_state_connected);
             break;
 
-        // case GATT_DEVICE_DATA_AVAILABLE:
-        //     ESP_LOGI(MODULE_NAME, "Device[%d] - Event: GATT_DEVICE_DATA_AVAILABLE", p_gatt_device->device_id);
-        //     gl_profile_tab[p_gatt_device->device_id].is_ble_data_available = true;
-        //     status = STATUS_HANDLE;
-        //     break;
+        case GATT_DEVICE_DATA_AVAILABLE:
+            ESP_LOGI(MODULE_NAME, "Device[%d] - Event: GATT_DEVICE_DATA_AVAILABLE", p_gatt_device->device_id);
+            status = STATUS_HANDLE;
+            break;
 
         default:
             break;
@@ -1916,8 +1915,7 @@ static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const Ev
                     }
                     if(idx == p_gattc_manager->device_max)
                     {
-                        #define DEVICE_MSG_JSON_MAX_SIZE    512
-                        char sensor_msgs_json[DEVICE_MSG_JSON_MAX_SIZE * PROFILE_NUM_MAX];
+                        char sensor_msgs_json[SENSOR_DATA_JSON_MAX_LEN * PROFILE_NUM_MAX];
                         ESP_LOGI(MODULE_NAME, "All devices data are available");
                         if( 0 != sensor_data_msgs_format_json(sensor_msgs_json, sizeof(sensor_msgs_json),
                                                               p_sensor_data, p_gattc_manager->device_max))
