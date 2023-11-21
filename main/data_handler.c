@@ -27,7 +27,7 @@
 * Module Preprocessor Macros
 *******************************************************************************/
 #define MODULE_NAME                     "data_handler"
-#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_INFO
+#define MODULE_DEFAULT_LOG_LEVEL        ESP_LOG_WARN
 /******************************************************************************
 * Module Typedefs
 *******************************************************************************/
@@ -387,7 +387,7 @@ int sensor_data_msgs_format_json(char* json_out, uint16_t json_max_length,
     // char* str_json = cJSON_Print(root);
     if(str_json == NULL)
     {
-        ESP_LOGE(MODULE_NAME, "Create JSON string failed");
+        ESP_LOGE(MODULE_NAME, "Failed to allocate memory for str_json");
         goto json_failed_cleanup;
     }
     memset(json_out, 0, json_max_length);
@@ -401,7 +401,7 @@ int sensor_data_msgs_format_json(char* json_out, uint16_t json_max_length,
         strcpy(json_out, str_json);
     	// memcpy(json_out, str_json, strlen(str_json));
     }
-    ESP_LOGE(MODULE_NAME, "Out %d / %d", strlen(json_out), strlen(str_json));
+    ESP_LOGI(MODULE_NAME, "Out %d / %d", strlen(json_out), strlen(str_json));
     ESP_LOGI(MODULE_NAME, "JSON ===========================: \r\n \r\n %s  \r\n \r\n ===========================: \r\n\r\n", str_json);
     free(str_json);
     cJSON_Delete(root);

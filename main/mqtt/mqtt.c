@@ -91,7 +91,7 @@ void mqtt_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
 			break;
 
 		case MQTT_EVENT_DISCONNECTED:
-			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_DISCONNECTED");
+			ESP_LOGW(MODULE_NAME, "MQTT_EVENT_DISCONNECTED");
 			#if (MQTT_TESTING != 0)
 			xTaskNotify(xMQTT_handler, MQTT_CLIENT_EVENT_DISCONNECT, eSetValueWithOverwrite);
 			#else /* !(MQTT_TESTING != 0) */
@@ -105,7 +105,7 @@ void mqtt_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
 			break;
 
 		case MQTT_EVENT_UNSUBSCRIBED:
-			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", p_evt->msg_id);
+			ESP_LOGW(MODULE_NAME, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", p_evt->msg_id);
 			break;
 
 		case MQTT_EVENT_PUBLISHED:
@@ -125,7 +125,7 @@ void mqtt_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
 			break;
 
 		case MQTT_EVENT_ERROR:
-			ESP_LOGD(MODULE_NAME, "MQTT_EVENT_ERROR");
+			ESP_LOGE(MODULE_NAME, "MQTT_EVENT_ERROR");
        		if (p_evt->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) 
 			{
 				ESP_LOGE(MODULE_NAME,"reported from esp-tls : %s", esp_err_to_name(p_evt->error_handle->esp_tls_last_esp_err));
@@ -191,7 +191,7 @@ void mqtt_task(void* param)
 
 #include "actor.h"
 
-#define MQTT_ACTOR_QUEUE_LEN				(20)
+#define MQTT_ACTOR_QUEUE_LEN				(40)
 
 Active mqtt_actor = {0};
 ActiveId_t p_mqtt_actor = NULL;
@@ -283,6 +283,7 @@ static eStatus mqtt_state_active(StateMachine_t* const me, const EvtHandle_t p_e
 			break;
 
 		case EXIT_SIG:
+			mqtt_stop();
 			ESP_LOGI(MODULE_NAME, "Exit: mqtt_state_active");
 			break;
 

@@ -36,7 +36,7 @@
 * Configuration Constants
 *******************************************************************************/
 #define MQTT_TASK_STACK_SIZE                    (10*1024)
-#define MQTT_TASK_PRIORITY	                    (tskIDLE_PRIORITY + 1)
+#define MQTT_TASK_PRIORITY	                    (tskIDLE_PRIORITY + 2)
 
 #define DATA_HANDLING_TASK_STACK_SIZE           (5*1024)
 #define DATA_HANDLING_TASK_PRIORITY	            (tskIDLE_PRIORITY + 1)

@@ -49,15 +49,15 @@
 #include "mqtt.h"
 
 // GATT device manager actor
-#define GATT_DEVICE_MANAGER_ACTOR_QUEUE_LEN             (10)
-#define GATT_DEVICE_MANAGER_ACTOR_TASK_PRIORITY         (tskIDLE_PRIORITY + 1)
+#define GATT_DEVICE_MANAGER_ACTOR_QUEUE_LEN             (30)
+#define GATT_DEVICE_MANAGER_ACTOR_TASK_PRIORITY         (tskIDLE_PRIORITY)
 #define GATT_DEVICE_MANAGER_ACTOR_TASK_STACK_SIZE       (1024*8)
 #define GATT_DEVICE_MANAGER_CONNECT_TIMEOUT             (pdMS_TO_TICKS(60 * 1000)) // 60s
 #define GATT_DEVICE_MANAGER_SUBSCRIBE_TIMEOUT           (pdMS_TO_TICKS(1 * 1000)) // 1s
-#define GATT_DEVICE_MANAGER_SEND_DATA_PERIOD            (pdMS_TO_TICKS(75)) // 75ms
+#define GATT_DEVICE_MANAGER_SEND_DATA_PERIOD            (pdMS_TO_TICKS(60)) // 75ms
 
 // GATT device actor
-#define GATT_DEVICE_ACTOR_QUEUE_LEN                     (10)
+#define GATT_DEVICE_ACTOR_QUEUE_LEN                     (30)
 #define GATT_DEVICE_ACTOR_TASK_PRIORITY                 (tskIDLE_PRIORITY + 1)
 #define GATT_DEVICE_ACTOR_TASK_STACK_SIZE               (1024*3)
 
@@ -696,7 +696,7 @@ int on_gatt_server_initiated_update_sucess(esp_gatt_if_t gattc_if,  uint16_t con
 int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_t descr_handle, 
                             gatt_char_evt_type_value evt_type, uint8_t* p_data, uint16_t data_len)
 {
-    ESP_LOGI(MODULE_NAME, "on_gatt_ccc_changed_cb of gattc_if %d, connect_id %d with datalen %d, evt_type %d",
+    ESP_LOGD(MODULE_NAME, "on_gatt_ccc_changed_cb of gattc_if %d, connect_id %d with datalen %d, evt_type %d",
                                                      gattc_if, connect_id, data_len, evt_type);
     // Get appID based on gattc_if
     int app_id = ble_gattc_profile_lookup_appid_by_interface(gattc_if);
@@ -731,11 +731,12 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
     else
     {
         ble_data_packet.recv_timestamp = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
+        ble_data_packet.recv_timestamp /= 1000; // Convert to ms
     }
 
     // Get sensor data
     memcpy(&ble_data_packet.sensor_payload, p_data, data_len);
-    ESP_LOGI(MODULE_NAME, "[%d] CCC changed callback", app_id);
+    ESP_LOGD(MODULE_NAME, "[%d] CCC changed callback", app_id);
     memcpy(&gl_profile_tab[app_id].ble_data, &ble_data_packet, sizeof(ble_sensor_data_packet_t));
     gl_profile_tab[app_id].is_ble_data_available = true;
 
@@ -743,20 +744,13 @@ int on_gatt_ccc_changed_cb(esp_gatt_if_t gattc_if,  uint16_t connect_id, uint16_
     // Invoke callback if available
     if(gl_profile_tab[0].char_ccc_changed_cb == NULL)
     {
-        ESP_LOGI(MODULE_NAME, "Invalid Char CCC changed callback");
+        ESP_LOGD(MODULE_NAME, "Invalid Char CCC changed callback");
         // return -1;  
     }
     else
     {
         gl_profile_tab[0].char_ccc_changed_cb(&ble_data_packet, &ble_packet_size);    
     }
-
-    // Post event to device actor
-    gattc_device_actor_t* p_gattc_device_actor = ble_gattc_get_actor(app_id);
-    assert(p_gattc_device_actor != NULL);
-    Active_post((Active*)p_gattc_device_actor, &gatt_device_data_available_evt);
-    
-
     return 0;
 }
 
@@ -1524,7 +1518,7 @@ static eStatus gattc_device_state_subscribed(StateMachine_t* const me, const Evt
             break;
 
         case GATT_DEVICE_DATA_AVAILABLE:
-            ESP_LOGI(MODULE_NAME, "Device[%d] - Event: GATT_DEVICE_DATA_AVAILABLE", p_gatt_device->device_id);
+            ESP_LOGD(MODULE_NAME, "Device[%d] - Event: GATT_DEVICE_DATA_AVAILABLE", p_gatt_device->device_id);
             status = STATUS_HANDLE;
             break;
 
@@ -1902,7 +1896,7 @@ static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const Ev
                 break;
             
             case GATT_TIMER_TIMEOUT:
-                ESP_LOGI(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_TIMER_TIMEOUT");
+                ESP_LOGD(MODULE_NAME, "Event: GATT_DEV_MANAGER: GATT_TIMER_TIMEOUT");
                 // Make sure all devices data are available
                 for(uint8_t idx=0; idx <= p_gattc_manager->device_max; idx++)
                 {
@@ -1922,7 +1916,7 @@ static eStatus gattc_manager_state_subscribed(StateMachine_t* const me, const Ev
                     if(idx == p_gattc_manager->device_max)
                     {
                         char sensor_msgs_json[SENSOR_DATA_JSON_MAX_LEN * PROFILE_NUM_MAX];
-                        ESP_LOGI(MODULE_NAME, "All devices data are available");
+                        ESP_LOGD(MODULE_NAME, "All devices data are available");
                         if( 0 != sensor_data_msgs_format_json(sensor_msgs_json, sizeof(sensor_msgs_json),
                                                               p_sensor_data, p_gattc_manager->device_max))
                         {

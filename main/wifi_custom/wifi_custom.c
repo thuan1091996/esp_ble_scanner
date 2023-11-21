@@ -492,7 +492,7 @@ int wifi_custom__connected(void)
 	EventBits_t bit_mask = xEventGroupGetBits(s_wifi_event_group);
     if(bit_mask & WIFI_CONNECTED_BIT)
     {
-        ESP_LOGI("wifi_custom", "Wi-Fi is connected");
+        ESP_LOGD("wifi_custom", "Wi-Fi is connected");
         return 1;
     }
     else
