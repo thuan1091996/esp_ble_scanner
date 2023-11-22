@@ -69,6 +69,7 @@ void app_ble_data_handling(void* p_data, void* data_len);
 /* Wi-Fi callbacks */
 void app_wifi_connected_cb(void* p_data, void* data_len);
 void app_wifi_disconnected_cb(void* p_data, void* data_len);
+void app_wifi_failed_cb(void* p_data, void* data_len);
 /******************************************************************************
 * App init functions
 *******************************************************************************/
@@ -116,6 +117,7 @@ int app_wifi_init()
     {
         .wifi_sta_connected = &app_wifi_connected_cb,
         .wifi_sta_disconnected = &app_wifi_disconnected_cb,
+        .wifi_sta_failed = &app_wifi_failed_cb,
     };
 
     if( 0 != wifi_custom_init(&wifi_sta_callback))
@@ -126,17 +128,13 @@ int app_wifi_init()
     return 0;
 }
 
-int app_wifi_connect(uint8_t retry_count)
+int app_wifi_connect()
 {
-    for(uint8_t wifi_connect_retry_count=1; wifi_connect_retry_count<=retry_count; wifi_connect_retry_count++)
-    {
-        wifi_custom__power_on();
-        if(wifi_custom__connected() == true)
-            return 0;
-        else
-            ESP_LOGI(MODULE_NAME, "Retry connecting to Wi-Fi (%d/%d)...", wifi_connect_retry_count, retry_count);
-    }
-    return -1;
+    wifi_custom__power_on();
+    if(wifi_custom__connected() == true)
+        return 0;
+    else
+        return -1;
 }
 
 void app_main(void)
@@ -167,7 +165,7 @@ void app_main(void)
         ESP_LOGE(MODULE_NAME, "Failed to initialize Wi-Fi");
     }
     // Connect to Wi-Fi
-    if (0 != app_wifi_connect(WIFI_CONF_MAX_RETRY))
+    if (0 != app_wifi_connect())
     {
         ESP_LOGE(MODULE_NAME, "Failed to connect to Wi-Fi");
     }
@@ -241,4 +239,11 @@ void app_wifi_disconnected_cb(void* p_data, void* data_len)
     // Post to MQTT actor
     wifi_evt.sig = WIFI_DISCONNECTED;
     Active_post(p_mqtt_actor, (Evt*) &wifi_evt);
+}
+
+void app_wifi_failed_cb(void* p_data, void* data_len)
+{
+    ESP_LOGE("wifi_callback", "Failed to connect to Wi-Fi");
+    // Rest ESP32
+    esp_restart();
 }
