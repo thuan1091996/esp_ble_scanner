@@ -212,13 +212,14 @@ int smartconfig_start()
 
     /* Waiting for smartconfig to finish */
     EventBits_t bits = xEventGroupWaitBits(smartconf_event_group, ESPTOUCH_GOT_CREDENTIAL,
-                                           pdFALSE,
-                                           pdFALSE,
-                                           pdMS_TO_TICKS(ESPTOUCH_TIMEOUT_MS));
+                                            pdFALSE,
+                                            pdFALSE,
+                                            pdMS_TO_TICKS(ESPTOUCH_TIMEOUT_MS));
     if (bits & ESPTOUCH_GOT_CREDENTIAL)
     {
         ESP_LOGI("esptouch", "Obtained SSID:%s password:%s", ssid, password);
         esp_smartconfig_stop();
+        esp_wifi_connect();
         return 0;
     }
     else
@@ -474,21 +475,7 @@ int wifi_custom__power_on(void)
         return 0;
     }
     ESP_LOGE("wifi_custom", "Failed to connect to SSID:%s, password:%s", ssid, password);
-#if (WIFI_CONFIG_AUTORUN_SMARTCONFIG != 0)
-        ESP_LOGE("wifi_custom", "Failed to connect to Wi-Fi. Running ESP SmartConfig...");
-        wifi_custom__power_off();
-        if (smartconfig_start() == 0)
-        {
-            ESP_LOGI("wifi_custom", "Obtained Wi-Fi credential with Smartconfig, trying to connect");
-            return wifi_custom__power_on();
-        }
-        else
-        {
-            ESP_LOGE("wifi_custom", "Failed to get Wi-Fi credential with smartconfig after timeout");
-            smartconfig_stop();
-        }
-        smartconfig_stop();
-#endif /* End of (WIFI_CONFIG_AUTORUN_SMARTCONFIG != 0) */
+
     return -1;
 } 
 //Implements esp_wifi functions to cleanly shutdown the wifi driver. (allows for a future call of wifi_custom_power_on() to work as epxected)
