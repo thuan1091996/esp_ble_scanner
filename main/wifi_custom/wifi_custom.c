@@ -235,6 +235,7 @@ int smartconfig_stop()
 
 void wifi_event_handler(void* event_handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
+    static int connect_retry_count = 0;
 	ESP_LOGI("wifi_custom", "Event handler invoked \r\n");
     /* Handle IP_EVENT */
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
@@ -243,6 +244,7 @@ void wifi_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
 		ESP_LOGI("wifi_custom", "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         if(wifi_station_cb.wifi_sta_connected != NULL)
         {
+            connect_retry_count = 0;
             wifi_station_cb.wifi_sta_connected(NULL, NULL);
         }
 		xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
@@ -282,35 +284,44 @@ void wifi_event_handler(void* event_handler_arg, esp_event_base_t event_base, in
 
                 default:
                 {
+                    ESP_LOGE("wifi_custom", "STA disconnected, reason: %d", event->reason);
 
                 }
                 break;
             }
             xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-            if (esp_wifi_disconnect() != 0)
-            {
-                ESP_LOGE("wifi_custom", "Failed to disconnect Wi-Fi");
-            }
-            if (esp_wifi_stop() != ESP_OK)
-            {
-                ESP_LOGE("wifi_custom", "Failed to stop Wi-Fi");
-            }
             if(wifi_station_cb.wifi_sta_disconnected != NULL)
             {
                 wifi_station_cb.wifi_sta_disconnected(NULL, NULL);
             }
+            connect_retry_count++;
+            
 #if (WIFI_CONF_AUTO_RECONNECT != 0)
-            if (0!= wifi_custom__power_on())
+            if (connect_retry_count < WIFI_CONF_MAX_RETRY)
             {
-                ESP_LOGE("wifi_custom", "Failed to reconnect to Wi-Fi");
+                esp_wifi_connect();
+                ESP_LOGW("wifi_custom", "Retrying to connect to Wi-Fi AP (%d/%d)", connect_retry_count, WIFI_CONF_MAX_RETRY);
+                return;
+            }
+#endif /* End of (WIFI_CONF_AUTO_RECONNECT != 0) */
+
+#if (WIFI_CONFIG_AUTORUN_SMARTCONFIG != 0)
+            ESP_LOGE("wifi_custom", "Failed to connect to Wi-Fi AP, starting SmartConfig");
+            esp_wifi_disconnect();
+            esp_wifi_scan_stop();
+            if (smartconfig_start() == 0)
+            {
+                ESP_LOGI("wifi_custom", "SmartConfig finished successfully");
             }
             else
             {
-                ESP_LOGI("wifi_custom", "Connected to Wi-Fi");
+                ESP_LOGE("wifi_custom", "SmartConfig failed");
             }
-#endif /* End of (WIFI_CONF_AUTO_RECONNECT != 0) */
+#endif /* End of (WIFI_CONFIG_AUTORUN_SMARTCONFIG != 0) */
+
             if(wifi_station_cb.wifi_sta_failed != NULL)
             {
+                ESP_LOGE("wifi_custom", "Failed to connect to Wi-Fi AP");
                 wifi_station_cb.wifi_sta_failed(NULL, NULL);
             }
         }
