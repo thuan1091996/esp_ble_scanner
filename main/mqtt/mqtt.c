@@ -285,13 +285,16 @@ static eStatus mqtt_state_active(StateMachine_t* const me, const EvtHandle_t p_e
 		case EXIT_SIG:
 			mqtt_stop();
 			ESP_LOGI(MODULE_NAME, "Exit: mqtt_state_active");
+			status = STATUS_HANDLE;
 			break;
 
 		case WIFI_DISCONNECTED:
+			ESP_LOGW(MODULE_NAME, "WiFi disconnected");
 			status = TRANSITION(&mqtt_statewait4network);
 			break;
 		
 		case MQTT_DISCONNECTED:
+			ESP_LOGW(MODULE_NAME, "MQTT disconnected");
 			status = TRANSITION(&mqtt_statewait4connection);
 			break;
 
@@ -307,6 +310,7 @@ static eStatus mqtt_state_active(StateMachine_t* const me, const EvtHandle_t p_e
 			break;
 
 		default:
+			status = STATUS_IGNORE;
 			break;
 	}
 	return status;
